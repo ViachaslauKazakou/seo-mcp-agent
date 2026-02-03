@@ -1,0 +1,142 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "FastAPI Server (Uvicorn)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "src.main:app",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8030",
+                "--reload"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "envFile": "${workspaceFolder}/src/settings/.env.local",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "jinja": true
+        },
+        {
+            "name": "Learn: Local Development",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/main.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "DATABASE_URL": "postgresql+asyncpg://docker:docker@localhost:5433/postgres",
+                "RABBITMQ_URL": "amqp://guest:guest@localhost:5672//",
+                "REDIS_URL": "redis://localhost:6379",
+                "LOG_LEVEL": "DEBUG",
+                "DEBUG": "true",
+                "DEVELOPMENT": "true"
+            },
+            "envFile": "${workspaceFolder}/src/settings/.env.local",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "subProcess": true,
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "jinja": true
+        },
+        {
+            "name": "Learn: Celery Worker Debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/run_celery.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "DATABASE_URL": "postgresql+asyncpg://docker:docker@localhost:5433/postgres",
+                "RABBITMQ_URL": "amqp://guest:guest@localhost:5672//",
+                "REDIS_URL": "redis://localhost:6379",
+                "LOG_LEVEL": "DEBUG",
+                "DEBUG": "true",
+                "DEVELOPMENT": "true"
+            },
+            "envFile": "${workspaceFolder}/src/settings/.env.local",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "subProcess": true,
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Portal: Docker Debug",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Lambda Local: Docker Debug",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 5678
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "/app"
+                }
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Lambda Local: Runner Debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/lambda/local_lambda_runner.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "DATABASE_URL": "postgresql+asyncpg://docker:docker@localhost:5433/postgres",
+                "AWS_ENDPOINT_URL": "http://localhost:4566",
+                "AWS_ACCESS_KEY_ID": "test",
+                "AWS_SECRET_ACCESS_KEY": "test",
+                "AWS_REGION": "us-east-1",
+                "LOG_LEVEL": "DEBUG",
+                "DEBUG": "true"
+            },
+            "envFile": "${workspaceFolder}/src/settings/.env.lambda",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "subProcess": true,
+            "python": "${workspaceFolder}/.venv/bin/python"
+        },
+        {
+            "name": "Debug Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "envFile": "${workspaceFolder}/src/settings/.env.local",
+        }
+    ]
+}

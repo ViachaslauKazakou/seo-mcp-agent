@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}SEO Agent - Analyze{% endblock %}
+
+{% block content %}
+    <h1 class="mb-2">🔍 SEO Agent</h1>
+    <p class="subtitle">Analyze your website for SEO opportunities</p>
+    
+    <form id="form" class="mb-4">
+        <div class="mb-3">
+            <input 
+                type="url" 
+                id="url" 
+                class="form-control form-control-lg"
+                placeholder="https://example.com" 
+                required
+                autocomplete="off"
+            >
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">
+                📊 Embedding Provider
+            </label>
+            <div>
+                <div class="form-check form-check-inline">
+                    <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="embedding-provider" 
+                        id="embedding-hf" 
+                        value="hf"
+                        checked
+                    >
+                    <label class="form-check-label" for="embedding-hf">
+                        🤗 HuggingFace
+                    </label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="embedding-provider" 
+                        id="embedding-openai" 
+                        value="openai"
+                    >
+                    <label class="form-check-label" for="embedding-openai">
+                        🔑 OpenAI
+                    </label>
+                </div>
+            </div>
+            <small class="form-text text-muted">
+                Choose embedding model provider
+            </small>
+        </div>
+        
+        <div class="mb-3" id="openai-embedding-model-div" style="display: none;">
+            <label for="openai-embedding-model" class="form-label">
+                OpenAI Embedding Model
+            </label>
+            <select id="openai-embedding-model" class="form-select">
+                <option value="text-embedding-3-small">text-embedding-3-small (1536 dims)</option>
+                <option value="text-embedding-3-large">text-embedding-3-large (3072 dims)</option>
+            </select>
+        </div>
+        
+        <div class="mb-3">
+            <div class="form-check form-switch">
+                <input 
+                    class="form-check-input" 
+                    type="checkbox" 
+                    id="use-openai" 
+                    value="true"
+                >
+                <label class="form-check-label" for="use-openai">
+                    Use OpenAI for AI-powered recommendations
+                    <small class="d-block text-muted">Requires OPENAI_API_KEY in .env</small>
+                </label>
+            </div>
+        </div>
+        
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg w-100">
+            Analyze
+        </button>
+    </form>
+    
+    <div id="result" class="alert alert-custom" style="display: none;">
+        <div id="status" class="mb-3"></div>
+        <div id="results-content"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('form');
+        const urlInput = document.getElementById('url');
+        const embeddingProviderRadios = document.querySelectorAll('input[name="embedding-provider"]');
+        const openaiEmbeddingModelDiv = document.getElementById('openai-embedding-model-div');
+        const openaiEmbeddingModelSelect = document.getElementById('openai-embedding-model');
+        const useOpenaiCheckbox = document.getElementById('use-openai');
+        const submitBtn = document.getElementById('submit-btn');
+        const resultDiv = document.getElementById('result');
+        const statusDiv = document.getElementById('status');
+        const resultsContent = document.getElementById('results-content');
+        
+        // Show/hide OpenAI embedding model selector based on provider selection
+        embeddingProviderRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'openai') {
+                    openaiEmbeddingModelDiv.style.display = 'block';
+                } else {
+                    openaiEmbeddingModelDiv.style.display = 'none';
+                }
+            });
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const url = urlInput.value.trim();
+            if (!url) return;
+            
+            // Get selected embedding provider
+            const embeddingProvider = document.querySelector('input[name="embedding-provider"]:checked').value;
+            const openaiEmbeddingModel = openaiEmbeddingModelSelect.value;
+
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Analyzing...';
+            resultDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-info';
+            const aiLabel = useOpenaiCheckbox.checked ? ' (with AI)' : '';
+            const embeddingLabel = ` [${embeddingProvider === 'openai' ? '🔑 OpenAI' : '🤗 HF'}]`;
+            statusDiv.innerHTML = '<strong>⏳</strong> Analyzing ' + url + aiLabel + embeddingLabel;
+            resultsContent.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        urls: [url],
+                        use_openai: useOpenaiCheckbox.checked,
+                        embedding_provider: embeddingProvider,
+                        openai_embedding_model: openaiEmbeddingModel
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Show success
+                statusDiv.className = 'alert alert-success';
+                statusDiv.innerHTML = '<strong>✅</strong> Analysis completed';
+
+                // Render results
+                renderResults(data);
+            } catch (error) {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.innerHTML = '<strong>❌ Error:</strong> ' + error.message;
+                resultsContent.innerHTML = '';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Analyze';
+            }
+        });
+
+        function renderResults(data) {
+            let html = `
+                <div class="row g-3 mb-4">
+                    <div class="col-6">
+                        <div class="card stat-card border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="text-muted small text-uppercase fw-bold">Documents Parsed</div>
+                                <div class="fs-3 fw-bold text-primary mt-2">${data.documents_parsed}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card stat-card border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="text-muted small text-uppercase fw-bold">Keywords Found</div>
+                                <div class="fs-3 fw-bold text-primary mt-2">${data.keywords_extracted.length}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card stat-card border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="text-muted small text-uppercase fw-bold">Clusters</div>
+                                <div class="fs-3 fw-bold text-primary mt-2">${data.clusters.length}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="card stat-card border-0 shadow-sm">
+                            <div class="card-body">
+                                <div class="text-muted small text-uppercase fw-bold">Recommendations</div>
+                                <div class="fs-3 fw-bold text-primary mt-2">${data.recommendations.length}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (data.keywords_extracted.length > 0) {
+                html += `
+                    <h5 class="mt-4 mb-3">Top Keywords</h5>
+                    <div class="list-group mb-4">
+                `;
+                data.keywords_extracted.slice(0, 10).forEach(kw => {
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between align-items-center">
+                                <strong>${kw.keyword}</strong>
+                                <span class="badge badge-custom">${kw.tf_idf_score.toFixed(3)}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            if (data.recommendations.length > 0) {
+                html += `
+                    <h5 class="mt-4 mb-3">Recommendations</h5>
+                    <div class="list-group mb-4">
+                `;
+                data.recommendations.forEach(rec => {
+                    const priorityColor = rec.priority >= 4 ? 'danger' : rec.priority >= 3 ? 'warning' : 'info';
+                    const source = rec.evidence?.source === 'openai' ? ' <small class="badge bg-success ms-2">AI</small>' : '';
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between align-items-start mb-1">
+                                <strong>${rec.title}${source}</strong>
+                                <span class="badge bg-${priorityColor}">${rec.priority}/5</span>
+                            </div>
+                            <small class="text-muted">${rec.description}</small>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            if (data.errors && data.errors.length > 0) {
+                html += `
+                    <div class="alert alert-warning mt-4">
+                        <h6 class="alert-heading">⚠️ Errors</h6>
+                        <ul class="mb-0">
+                `;
+                data.errors.forEach(err => {
+                    html += `<li>${err}</li>`;
+                });
+                html += `
+                        </ul>
+                    </div>
+                `;
+            }
+
+            resultsContent.innerHTML = html;
+        }
+    </script>
+{% endblock %}
