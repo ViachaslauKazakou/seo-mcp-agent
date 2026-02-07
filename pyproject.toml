@@ -38,6 +38,7 @@ dependencies = [
     "sqlmodel>=0.0.14",
     "python-dotenv>=1.0.0",
     "openai>=1.0.0",
+    "pyqt5-qt (>=5.15.2,<6.0.0)",
 ]
 
 [project.optional-dependencies]
