@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "Launch Desktop",
             "type": "debugpy",
             "request": "launch",
-            "program": "app/main.py",
+            "program": "desktop/main.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "python": "${command:python.interpreterPath}",
