@@ -20,7 +20,43 @@
         
         <div class="mb-3">
             <label class="form-label">
-                📊 Embedding Provider
+                Content Parser
+            </label>
+            <div>
+                <div class="form-check form-check-inline">
+                    <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="fetcher-type" 
+                        id="fetcher-httpx" 
+                        value="httpx"
+                        checked
+                    >
+                    <label class="form-check-label" for="fetcher-httpx">
+                        Standard (httpx) - Fast, for static sites
+                    </label>
+                </div>
+                <div class="form-check form-check-inline">
+                    <input 
+                        class="form-check-input" 
+                        type="radio" 
+                        name="fetcher-type" 
+                        id="fetcher-playwright" 
+                        value="playwright"
+                    >
+                    <label class="form-check-label" for="fetcher-playwright">
+                        PlayWright - Handles JavaScript-heavy sites
+                    </label>
+                </div>
+            </div>
+            <small class="form-text text-muted">
+                Use PlayWright for modern SPA/JavaScript sites, Standard for regular HTML
+            </small>
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">
+                Embedding Provider
             </label>
             <div>
                 <div class="form-check form-check-inline">
@@ -33,7 +69,7 @@
                         checked
                     >
                     <label class="form-check-label" for="embedding-hf">
-                        🤗 HuggingFace
+                        HuggingFace
                     </label>
                 </div>
                 <div class="form-check form-check-inline">
@@ -45,7 +81,7 @@
                         value="openai"
                     >
                     <label class="form-check-label" for="embedding-openai">
-                        🔑 OpenAI
+                        OpenAI
                     </label>
                 </div>
             </div>
@@ -118,6 +154,9 @@
             const url = urlInput.value.trim();
             if (!url) return;
             
+            // Get selected fetcher type
+            const fetcherType = document.querySelector('input[name="fetcher-type"]:checked').value;
+            
             // Get selected embedding provider
             const embeddingProvider = document.querySelector('input[name="embedding-provider"]:checked').value;
             const openaiEmbeddingModel = openaiEmbeddingModelSelect.value;
@@ -129,7 +168,8 @@
             statusDiv.className = 'alert alert-info';
             const aiLabel = useOpenaiCheckbox.checked ? ' (with AI)' : '';
             const embeddingLabel = ` [${embeddingProvider === 'openai' ? '🔑 OpenAI' : '🤗 HF'}]`;
-            statusDiv.innerHTML = '<strong>⏳</strong> Analyzing ' + url + aiLabel + embeddingLabel;
+            const fetcherLabel = ` {${fetcherType === 'playwright' ? '🎭 PW' : '⚡ HTTP'}}`;
+            statusDiv.innerHTML = '<strong>⏳</strong> Analyzing ' + url + aiLabel + embeddingLabel + fetcherLabel;
             resultsContent.innerHTML = '';
 
             try {
@@ -138,6 +178,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         urls: [url],
+                        fetcher_type: fetcherType,
                         use_openai: useOpenaiCheckbox.checked,
                         embedding_provider: embeddingProvider,
                         openai_embedding_model: openaiEmbeddingModel
@@ -204,16 +245,47 @@
                 </div>
             `;
 
+            const intentSummary = data.intent_summary || {};
+            if (Object.keys(intentSummary).length === 0 && data.keywords_extracted && data.keywords_extracted.length > 0) {
+                data.keywords_extracted.forEach(kw => {
+                    const intent = kw.intent || 'informational';
+                    intentSummary[intent] = (intentSummary[intent] || 0) + 1;
+                });
+            }
+
+            if (Object.keys(intentSummary).length > 0) {
+                html += `
+                    <h5 class="mt-2 mb-3">Intent Breakdown</h5>
+                    <div class="list-group mb-4">
+                `;
+                Object.entries(intentSummary).forEach(([intent, count]) => {
+                    html += `
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <strong>${intent}</strong>
+                            <span class="badge badge-custom">${count}</span>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            } else {
+                html += `
+                    <div class="alert alert-warning mt-2">
+                        Intent breakdown is not available for this run.
+                    </div>
+                `;
+            }
+
             if (data.keywords_extracted.length > 0) {
                 html += `
                     <h5 class="mt-4 mb-3">Top Keywords</h5>
                     <div class="list-group mb-4">
                 `;
                 data.keywords_extracted.slice(0, 10).forEach(kw => {
+                    const intentTag = kw.intent ? ` <small class="badge bg-secondary ms-2">${kw.intent}</small>` : '';
                     html += `
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between align-items-center">
-                                <strong>${kw.keyword}</strong>
+                                <strong>${kw.keyword}${intentTag}</strong>
                                 <span class="badge badge-custom">${kw.tf_idf_score.toFixed(3)}</span>
                             </div>
                         </div>

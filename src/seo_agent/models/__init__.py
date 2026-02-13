@@ -25,6 +25,12 @@ class InputSpec(BaseModel):
     max_pages: int = Field(default=50, description="Max pages to crawl")
     crawl_timeout: int = Field(default=300, description="Crawl timeout in seconds")
     
+    # Fetcher type
+    fetcher_type: str = Field(
+        default="httpx",
+        description="Fetcher type: 'httpx' for simple pages, 'playwright' for JS-heavy sites"
+    )
+    
     # LLM options
     use_openai: bool = Field(default=False, description="Use OpenAI for recommendations")
     openai_model: str = Field(default="gpt-4o-mini", description="OpenAI model name")
@@ -51,6 +57,7 @@ class InputSpec(BaseModel):
             "language": "en",
             "max_depth": 1,
             "max_pages": 10,
+            "fetcher_type": "httpx",
             "use_openai": False,
             "openai_model": "gpt-4o-mini",
             "hf_embedding_model": "all-MiniLM-L6-v2",
@@ -144,6 +151,7 @@ class RunReport(BaseModel):
     keywords_extracted: List[KeywordCandidate]
     clusters: List[Cluster]
     recommendations: List[Recommendation]
+    intent_summary: Dict[str, int] = Field(default_factory=dict, description="Intent distribution for extracted keywords")
     
     # Metadata
     started_at: datetime

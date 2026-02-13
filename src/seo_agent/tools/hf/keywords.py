@@ -4,7 +4,13 @@ from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
 
-from seo_agent.models import KeywordCandidate, ParsedDocument
+from seo_agent.models import IntentType, KeywordCandidate, ParsedDocument
+from seo_agent.tools.hf.config import (
+    COMMERCIAL_PHRASES,
+    INFORMATIONAL_PHRASES,
+    NAVIGATIONAL_PHRASES,
+    TRANSACTIONAL_PHRASES,
+)
 
 
 class KeywordExtractor:
@@ -72,16 +78,33 @@ class KeywordExtractor:
             return []
     
     @staticmethod
-    def _detect_intent(keyword: str) -> str:
-        """Simple intent detection heuristic."""
-        keyword_lower = keyword.lower()
-        
-        commercial_words = ["buy", "price", "cost", "cheap", "discount", "deal", "sale"]
-        if any(word in keyword_lower for word in commercial_words):
-            return "commercial"
-        
-        transactional_words = ["how to", "tutorial", "guide", "best", "top"]
-        if any(word in keyword_lower for word in transactional_words):
-            return "informational"
-        
-        return "informational"
+    def _detect_intent(keyword: str) -> IntentType:
+        """Intent detection heuristic based on configurable rules.
+
+        Supported intents: informational, navigational, commercial, transactional.
+        """
+        keyword_lower = keyword.lower().strip()
+
+        def matches_any(phrases: List[str]) -> bool:
+            return any(
+                re.search(r"\b" + re.escape(phrase) + r"\b", keyword_lower)
+                for phrase in phrases
+            )
+
+        # Transactional intent: ready to act
+        if matches_any(TRANSACTIONAL_PHRASES):
+            return IntentType.TRANSACTIONAL
+
+        # Commercial investigation: compare and evaluate
+        if matches_any(COMMERCIAL_PHRASES):
+            return IntentType.COMMERCIAL
+
+        # Navigational: find a specific site/page
+        if matches_any(NAVIGATIONAL_PHRASES):
+            return IntentType.NAVIGATIONAL
+
+        # Informational: learn or understand
+        if matches_any(INFORMATIONAL_PHRASES):
+            return IntentType.INFORMATIONAL
+
+        return IntentType.INFORMATIONAL
