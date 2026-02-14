@@ -39,8 +39,11 @@ dependencies = [
     "sqlmodel>=0.0.14",
     "python-dotenv>=1.0.0",
     "openai>=1.0.0",
-    "jupyter-book (>=2.1.2,<3.0.0)",
-    "sphinx-autodoc-typehints (>=3.6.2,<4.0.0)",
+    # Documentation
+    "sphinx>=9.0.0",
+    "sphinx-book-theme>=1.1.0",
+    "myst-parser>=5.0.0",
+    "sphinx-autodoc-typehints>=3.6.0",
 ]
 
 [project.optional-dependencies]
