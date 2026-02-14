@@ -1,10 +1,20 @@
 """Keyword extraction tool."""
 
+import logging
 from typing import List
 from sklearn.feature_extraction.text import TfidfVectorizer
 import re
 
-from seo_agent.models import KeywordCandidate, ParsedDocument
+from seo_agent.models import IntentType, KeywordCandidate, ParsedDocument
+from seo_agent.tools.hf.stopwords import is_stopword
+
+logger = logging.getLogger(__name__)
+from seo_agent.tools.hf.config import (
+    COMMERCIAL_PHRASES,
+    INFORMATIONAL_PHRASES,
+    NAVIGATIONAL_PHRASES,
+    TRANSACTIONAL_PHRASES,
+)
 
 
 class KeywordExtractor:
@@ -45,12 +55,30 @@ class KeywordExtractor:
             
             # Get top keywords across all documents
             scores = tfidf_matrix.sum(axis=0).A1
-            top_indices = scores.argsort()[-self.max_keywords:][::-1]
+            top_indices = scores.argsort()[-self.max_keywords * 3:][::-1]  # Get 3x more for filtering
+            
+            # Log all keywords before filtering
+            all_keywords_before = [feature_names[idx] for idx in top_indices]
+            logger.info(f"🔍 Found {len(all_keywords_before)} keywords before filtering:")
+            logger.info(f"   Keywords: {', '.join(all_keywords_before[:30])}...")
             
             keywords = []
+            filtered_out = []
+            
             for idx in top_indices:
                 keyword = feature_names[idx]
                 score = float(scores[idx])
+                
+                # Skip stop words (single words only)
+                words = keyword.split()
+                if len(words) == 1 and is_stopword(keyword):
+                    filtered_out.append(keyword)
+                    continue
+                
+                # Skip if too short
+                if len(keyword) < 2:
+                    filtered_out.append(keyword)
+                    continue
                 
                 # Count frequency
                 freq = sum(1 for doc in documents if keyword.lower() in doc.main_text.lower())
@@ -65,6 +93,14 @@ class KeywordExtractor:
                     intent=intent,
                     source_urls=[doc.url for doc in documents if keyword.lower() in doc.main_text.lower()]
                 ))
+                
+                # Stop when we have enough keywords
+                if len(keywords) >= self.max_keywords:
+                    break
+            
+            # Log filtering results
+            logger.info(f"✅ Kept {len(keywords)} keywords after filtering")
+            logger.info(f"❌ Filtered out {len(filtered_out)} stop words/short words: {', '.join(filtered_out[:20])}...")
             
             return keywords
         except Exception as e:
@@ -72,16 +108,33 @@ class KeywordExtractor:
             return []
     
     @staticmethod
-    def _detect_intent(keyword: str) -> str:
-        """Simple intent detection heuristic."""
-        keyword_lower = keyword.lower()
-        
-        commercial_words = ["buy", "price", "cost", "cheap", "discount", "deal", "sale"]
-        if any(word in keyword_lower for word in commercial_words):
-            return "commercial"
-        
-        transactional_words = ["how to", "tutorial", "guide", "best", "top"]
-        if any(word in keyword_lower for word in transactional_words):
-            return "informational"
-        
-        return "informational"
+    def _detect_intent(keyword: str) -> IntentType:
+        """Intent detection heuristic based on configurable rules.
+
+        Supported intents: informational, navigational, commercial, transactional.
+        """
+        keyword_lower = keyword.lower().strip()
+
+        def matches_any(phrases: List[str]) -> bool:
+            return any(
+                re.search(r"\b" + re.escape(phrase) + r"\b", keyword_lower)
+                for phrase in phrases
+            )
+
+        # Transactional intent: ready to act
+        if matches_any(TRANSACTIONAL_PHRASES):
+            return IntentType.TRANSACTIONAL
+
+        # Commercial investigation: compare and evaluate
+        if matches_any(COMMERCIAL_PHRASES):
+            return IntentType.COMMERCIAL
+
+        # Navigational: find a specific site/page
+        if matches_any(NAVIGATIONAL_PHRASES):
+            return IntentType.NAVIGATIONAL
+
+        # Informational: learn or understand
+        if matches_any(INFORMATIONAL_PHRASES):
+            return IntentType.INFORMATIONAL
+
+        return IntentType.INFORMATIONAL

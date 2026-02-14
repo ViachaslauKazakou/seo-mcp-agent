@@ -1,394 +1,403 @@
-import random
 import sys
+from typing import Any, Dict, List
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import (QApplication, QComboBox, QHBoxLayout, QLabel,
-                             QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
-                             QWidget)
+import httpx
+from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+API_BASE_URL = "http://127.0.0.1:8030"
+
+
+class AnalyzeWorker(QObject):
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, payload: Dict[str, Any], parent: QObject | None = None):
+        super().__init__(parent)
+        self.payload = payload
+
+    def run(self) -> None:
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(f"{API_BASE_URL}/api/analyze", json=self.payload)
+                response.raise_for_status()
+                self.finished.emit(response.json())
+        except Exception as exc:  # pragma: no cover - UI error path
+            self.failed.emit(str(exc))
 
 
 class SeoMcpAgent(QWidget):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-
+        self.worker_thread: QThread | None = None
+        self.worker: AnalyzeWorker | None = None
         self.init_ui()
 
-    def init_ui(self):
+    def init_ui(self) -> None:
+        self.setWindowTitle("SEO Agent - Desktop")
+        self.resize(900, 700)
 
-        # Main layout
-        self.main_layout = QVBoxLayout()
-        
+        self.setStyleSheet(
+            ""
+            "QWidget {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+            "    stop:0 #667eea, stop:1 #764ba2);"
+            "  font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;"
+            "}"
+            "QFrame#Card {"
+            "  background: white;"
+            "  border-radius: 12px;"
+            "}"
+            "QPushButton#PrimaryButton {"
+            "  background: #3377ee;"
+            "  color: black;"
+            "  border-radius: 8px;"
+            "  padding: 10px;"
+            "  font-weight: bold;"
+            "}"
+            "QPushButton#PrimaryButton:disabled {"
+            "  background: #a0a7ea;"
+            "}"
+            "QLabel#Subtitle { color: #666; font-size: 13px; }"
+            "QFrame#StatCard {"
+            "  border-left: 4px solid #667eea;"
+            "  background: #f8f9ff;"
+            "  border-radius: 8px;"
+            "}"
+            "QFrame#AlertInfo {"
+            "  border-left: 4px solid #667eea;"
+            "  background: #eef2ff;"
+            "  border-radius: 8px;"
+            "}"
+            "QFrame#AlertSuccess {"
+            "  border-left: 4px solid #16a34a;"
+            "  background: #ecfdf3;"
+            "  border-radius: 8px;"
+            "}"
+            "QFrame#AlertError {"
+            "  border-left: 4px solid #dc2626;"
+            "  background: #fef2f2;"
+            "  border-radius: 8px;"
+            "}"
+            "QFrame#ListItem {"
+            "  background: #ffffff;"
+            "  border: 1px solid #e5e7eb;"
+            "  border-radius: 8px;"
+            "}"
+            ""
+        )
 
-        # entering URL for analyze
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(20, 20, 20, 20)
+        outer_layout.setSpacing(0)
 
-        self.url_layout = QHBoxLayout()
+        card = QFrame()
+        card.setObjectName("Card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(16)
 
-        self.url_label_1 = QLabel("Analyze your website for SEO opportunities")
-        self.url_label_1.setFont(QFont("Arial", 12, QFont.Weight.Bold, QFont.Style.StyleNormal))
-        self.url_layout.addWidget(self.url_label_1)
+        title = QLabel("🔍 SEO Agent")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_font = QFont("Arial", 20, QFont.Weight.Bold)
+        title.setFont(title_font)
+        title.setStyleSheet("color: black;")
+        card_layout.addWidget(title)
 
-        self.url_label_2 = QLabel("Enter url:")
-        self.url_label_2.setFont(QFont("Arial", 16, QFont.Weight.Bold, QFont.Style.StyleItalic))
-        self.url_label_2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.url_layout.addWidget(self.url_label_2)
-
-       
-
+        subtitle = QLabel("Analyze your website for SEO opportunities")
+        subtitle.setObjectName("Subtitle")
+        card_layout.addWidget(subtitle)
 
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Enter url")
-        self.url_input.setFixedWidth(400)
-        self.url_input.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.url_layout.addWidget(self.url_input)
+        self.url_input.setPlaceholderText("https://example.com")
+        self.url_input.setMinimumHeight(40)
+        card_layout.addWidget(self.url_input)
+        fetcher_label = QLabel("🔗 Content Parser")
+        fetcher_label.setStyleSheet("color: #333; font-weight: bold;")
+        card_layout.addWidget(fetcher_label)
 
-        # Checkbox widget
+        fetcher_row = QHBoxLayout()
+        self.fetcher_group = QButtonGroup(self)
+        self.fetcher_httpx = QRadioButton("⚡ Standard (httpx) - Fast")
+        self.fetcher_playwright = QRadioButton("🎭 PlayWright - JavaScript")
+        self.fetcher_httpx.setChecked(True)
+        self.fetcher_group.addButton(self.fetcher_httpx)
+        self.fetcher_group.addButton(self.fetcher_playwright)
+        fetcher_row.addWidget(self.fetcher_httpx)
+        fetcher_row.addWidget(self.fetcher_playwright)
+        fetcher_row.addStretch(1)
+        card_layout.addLayout(fetcher_row)
+        provider_label = QLabel("📊 Embedding Provider")
+        provider_label.setStyleSheet("color: black; font-weight: bold;")
+        card_layout.addWidget(provider_label)
 
-        self.top_layout = QHBoxLayout()
-        # score top layout
-        self.score_top_layout = QHBoxLayout()
-        self.score_top_layout.setContentsMargins(0, 0, 0, 0)
-        self.score_top_layout.setSpacing(0)
-        self.game_score = QLabel(f"Game score: 0 : 0")
-        self.game_score.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.game_score.setStyleSheet("color: red;")
-        self.game_score.setAlignment(Qt.AlignCenter)
-        self.score_top_layout.addWidget(self.game_score)
+        provider_row = QHBoxLayout()
+        self.provider_group = QButtonGroup(self)
+        self.provider_hf = QRadioButton("🤗 HuggingFace")
+        self.provider_openai = QRadioButton("🔑 OpenAI")
+        self.provider_hf.setChecked(True)
+        self.provider_group.addButton(self.provider_hf)
+        self.provider_group.addButton(self.provider_openai)
+        provider_row.addWidget(self.provider_hf)
+        provider_row.addWidget(self.provider_openai)
+        provider_row.addStretch(1)
+        card_layout.addLayout(provider_row)
 
-        # Левый верхний блок (3 элемента)
-        self.left_top_layout = QVBoxLayout()
-        self.left_top_layout.setContentsMargins(0, 0, self.width() // 2, 0)
+        self.openai_embedding_row = QHBoxLayout()
+        openai_label = QLabel("OpenAI Embedding Model")
+        openai_label.setStyleSheet("color: black; font-weight: bold;")
+        self.openai_embedding_select = QComboBox()
+        self.openai_embedding_select.addItems(
+            ["text-embedding-3-small", "text-embedding-3-large"]
+        )
+        self.openai_embedding_row.addWidget(openai_label)
+        self.openai_embedding_row.addWidget(self.openai_embedding_select)
+        card_layout.addLayout(self.openai_embedding_row)
 
-        # Player 1 name
-        self.label_username_1 = QLabel("Player 1:")
-        self.label_username_1.setFont(QFont("Arial", 16, QFont.Bold))
-        self.label_username_1.setAlignment(Qt.AlignCenter)
-        self.left_top_layout.addWidget(self.label_username_1)
+        self.use_openai_checkbox = QCheckBox(
+            "Use OpenAI for AI-powered recommendations (requires OPENAI_API_KEY)"
+        )
+        card_layout.addWidget(self.use_openai_checkbox)
 
-        # Edit widget for player 1 name
-        self.user_name_1_edit = QLineEdit()
-        self.user_name_1_edit.setPlaceholderText("Enter your name")
-        self.user_name_1_edit.setFixedWidth(200)
-        self.left_top_layout.addWidget(self.user_name_1_edit)
+        self.analyze_button = QPushButton("Analyze")
+        self.analyze_button.setObjectName("PrimaryButton")
+        self.analyze_button.setMinimumHeight(44)
+        self.analyze_button.clicked.connect(self.start_analysis)
+        card_layout.addWidget(self.analyze_button)
 
-        # enter button layout
-        self.enter_button_layout = QHBoxLayout()
-        self.enter_button_layout.setContentsMargins(250, 0, 300, 0)
-        self.enter_button_layout.setStretchFactor(self.enter_button_layout, 1)
-        # self.enter_button_layout.setSpacing(0)
-        self.enter_button_layout.addStretch(1)
+        self.result_frame = QFrame()
+        self.result_frame.setObjectName("AlertInfo")
+        self.result_frame.setVisible(False)
+        result_layout = QVBoxLayout(self.result_frame)
+        result_layout.setContentsMargins(16, 16, 16, 16)
+        result_layout.setSpacing(12)
 
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("font-weight: bold; color: black;")
+        result_layout.addWidget(self.status_label)
 
-        # "Enter" button for confirming name
-        self.enter_button = QPushButton("Make cool!")
-        self.enter_button.setFixedSize(200, 40)
-        self.enter_button.clicked.connect(self.confirm_name)
-        self.enter_button_layout.addWidget(self.enter_button, alignment=Qt.AlignCenter | Qt.AlignTop)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.results_container = QWidget()
+        self.results_layout = QVBoxLayout(self.results_container)
+        self.results_layout.setSpacing(12)
+        self.results_layout.addStretch(1)
+        self.scroll_area.setWidget(self.results_container)
+        result_layout.addWidget(self.scroll_area)
 
-        # Total score label 1
-        self.total_score_label_1 = QLabel(f"Total score: {1}")
-        self.total_score_label_1.setFont(QFont("Arial", 14, QFont.Bold))
-        self.left_top_layout.addWidget(self.total_score_label_1)
+        card_layout.addWidget(self.result_frame)
 
-        # current score 1
-        self.current_count_label_1 = QLabel(f"Current score: {1}")
-        self.current_count_label_1.setFont(QFont("Arial", 14, QFont.Bold))
-        self.left_top_layout.addWidget(self.current_count_label_1)
-        self.left_top_layout.addStretch(1)
+        outer_layout.addWidget(card)
 
-        # Правый верхний блок (3 элемента)
-        self.right_top_layout = QVBoxLayout()
+        self.provider_openai.toggled.connect(self.update_provider_ui)
+        self.update_provider_ui()
 
-        # Player 2 name
-        self.label_username_2 = QLabel("Player 2:")
-        self.label_username_2.setFont(QFont("Arial", 16, QFont.Bold))
-        self.label_username_2.setAlignment(Qt.AlignCenter)
-        self.right_top_layout.addWidget(self.label_username_2)
+    def update_provider_ui(self) -> None:
+        is_openai = self.provider_openai.isChecked()
+        for i in range(self.openai_embedding_row.count()):
+            widget = self.openai_embedding_row.itemAt(i).widget()
+            if widget is not None:
+                widget.setVisible(is_openai)
 
-        # Edit widget for player 2 name
-        self.user_name_2_edit = QLineEdit()
-        self.user_name_2_edit.setPlaceholderText("Enter your name")
-        self.user_name_2_edit.setFixedWidth(200)
-        self.right_top_layout.addWidget(self.user_name_2_edit)
-
-        # Total score label 2
-        self.total_score_label_2 = QLabel(f"Total score: {2}")
-        self.total_score_label_2.setFont(QFont("Arial", 14, QFont.Bold))
-        self.right_top_layout.addWidget(self.total_score_label_2)
-
-        # current score 2
-        self.current_count_label_2 = QLabel(f"Current score: {1}")
-        self.current_count_label_2.setFont(QFont("Arial", 14, QFont.Bold))
-        self.right_top_layout.addWidget(self.current_count_label_2)
-        self.right_top_layout.addStretch(1)
-
-        # Добавляем два верхних блока в общий горизонтальный слой
-
-        self.top_layout.addLayout(self.left_top_layout)
-        self.top_layout.addLayout(self.right_top_layout)
-
-        # Нижний блок (3 элемента в один ряд)
-        self.dices_bottom_layout = QHBoxLayout()
-        self.set_dices()
-
-        # Добавляем все в основной слой
-        self.main_layout.addLayout(self.url_layout)
-        self.main_layout.addLayout(self.score_top_layout)
-        self.main_layout.addLayout(self.top_layout, 1)  # Верхний блок (50%)
-        self.main_layout.addLayout(self.enter_button_layout, 1)
-        self.main_layout.addLayout(self.dices_bottom_layout, 1)  # Нижний блок (50%)
-        # self.main_layout.addLayout(self.roll_layout, 1)  # Кнопка "ROLL DICE" (50%)
-
-        self.setLayout(self.main_layout)
-        self.setWindowTitle("Seo MCP agent")
-        self.resize(800, 600)  # Размер окна
-
-        # Connect the return pressed event to confirm name
-        self.user_name_1_edit.returnPressed.connect(self.confirm_name)
-        self.user_name_1_edit.textChanged.connect(self.update_label)
-        return
-
-    def roll_button(self):
-        # Add ROLL button
-        self.roll_layout = QHBoxLayout()
-        self.roll_button = QPushButton("ROLL DICE")
-        self.roll_button.setFixedSize(200, 50)
-        self.roll_button.setFont(QFont("Arial", 14, QFont.Bold))
-        self.roll_layout.addWidget(self.roll_button, alignment=Qt.AlignHCenter | Qt.AlignTop)
-        self.main_layout.addLayout(self.roll_layout, 1)  # Кнопка "ROLL DICE" (50%)
-
-    def save_button(self):
-        # Save count button
-        self.save_layout = QHBoxLayout()
-        self.save_button = QPushButton("Save")
-        self.save_button.setFixedSize(100, 40)
-        self.save_button.setFont(QFont("Arial", 14, QFont.Bold))
-        self.save_button.clicked.connect(self.save_score)
-        self.save_layout.addWidget(self.save_button, alignment=Qt.AlignHCenter | Qt.AlignTop)
-        self.main_layout.addLayout(self.save_layout, 1)  # Кнопка "SAVE" (50%)
-
-    def set_dices(self, count=5):
-        self.dice_labels = []
-        # dice_layout = QHBoxLayout()
-        for _ in range(count):  # Assuming 5 dice
-            dice_label = QLabel("0")
-            dice_label.setFont(QFont("Arial", 24, QFont.Bold))
-            dice_label.setAlignment(Qt.AlignCenter)
-            dice_label.setFixedSize(50, 50)
-            dice_label.setEnabled(True)
-            self.dices_bottom_layout.addWidget(dice_label)
-            self.dice_labels.append(dice_label)
-        # self.layout.addLayout(dice_layout)
-
-    def update_label(self, text):
-        self.label_username_1.setText(f"Your name: {text}")
-
-    def confirm_name(self):
-        # Get the player name from the input field
-        self.player_name_1 = self.user_name_1_edit.text()
-        self.player_name_2 = self.user_name_2_edit.text()
-
-        if not self.player_name_1 or not self.player_name_2:
-            QMessageBox.warning(self, "Warning", "Please enter your name!")
+    def start_analysis(self) -> None:
+        url = self.url_input.text().strip()
+        if not url:
+            self.show_error("Please enter a URL.")
+            return
+        if not (url.startswith("http://") or url.startswith("https://")):
+            self.show_error("URL must start with http:// or https://")
             return
 
-        # Remove the input field and enter button
-        self.user_name_1_edit.setParent(None)
-        self.user_name_2_edit.setParent(None)
-        self.enter_button.setParent(None)
+        fetcher = "playwright" if self.fetcher_playwright.isChecked() else "httpx"
+        provider = "openai" if self.provider_openai.isChecked() else "hf"
+        payload = {
+            "urls": [url],
+            "fetcher_type": fetcher,
+            "use_openai": self.use_openai_checkbox.isChecked(),
+            "embedding_provider": provider,
+            "openai_embedding_model": self.openai_embedding_select.currentText(),
+        }
 
-        # Update the label
-        self.label_username_1.setText(f"Player 1: {self.player_name_1}")
-        self.label_username_1.setFont(QFont("Arial", 14, QFont.Bold))
-        self.label_username_2.setText(f"Player 2: {self.player_name_2}")
-        self.label_username_2.setFont(QFont("Arial", 14, QFont.Bold))
+        self.analyze_button.setEnabled(False)
+        self.result_frame.setVisible(True)
+        self.result_frame.setObjectName("AlertInfo")
+        self.result_frame.setStyleSheet("")
+        self.status_label.setText("⏳ Analyzing...")
+        self.clear_results()
 
-        self.roll_button()
-        # Add START button
-        self.start_button = QPushButton("START GAME")
-        self.start_button.setFixedSize(200, 50)
-        self.start_button.setFont(QFont("Arial", 14, QFont.Bold))
-        self.start_button.clicked.connect(self.start_game)
+        self.worker_thread = QThread(self)
+        self.worker = AnalyzeWorker(payload)
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self.on_analysis_success)
+        self.worker.failed.connect(self.on_analysis_error)
+        self.worker.finished.connect(self.worker_thread.quit)
+        self.worker.failed.connect(self.worker_thread.quit)
+        self.worker_thread.finished.connect(self.worker.deleteLater)
+        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        self.worker_thread.start()
 
-        # # Add stretch to push the start button to the middle and top
-        # self.bottom_layout.addStretch(1)
-        self.roll_layout.addWidget(self.start_button, alignment=Qt.AlignHCenter | Qt.AlignTop)
+    def on_analysis_success(self, data: Dict[str, Any]) -> None:
+        self.analyze_button.setEnabled(True)
+        self.result_frame.setObjectName("AlertSuccess")
+        self.result_frame.setStyleSheet("")
+        self.status_label.setText("✅ Analysis completed")
+        self.render_results(data)
 
-    def start_game(self):
-        self.roll_button.clicked.connect(self.roll_dice)
-        self.roll_button.setStyleSheet("background-color: blue; color: white;")
+    def on_analysis_error(self, message: str) -> None:
+        self.analyze_button.setEnabled(True)
+        self.result_frame.setObjectName("AlertError")
+        self.result_frame.setStyleSheet("")
+        self.status_label.setText(f"❌ Error: {message}")
 
-        self.start_button.setParent(None)
-        self.save_button()
-        self.turn_marker()
+    def show_error(self, message: str) -> None:
+        self.result_frame.setVisible(True)
+        self.result_frame.setObjectName("AlertError")
+        self.result_frame.setStyleSheet("")
+        self.status_label.setText(f"❌ {message}")
+        self.clear_results()
 
-    def turn_marker(self):
-        if self.turn == 1:
-            self.label_username_1.setStyleSheet("background-color: green; color: white;")
-            self.label_username_2.setStyleSheet("")
-        else:
-            self.label_username_2.setStyleSheet("background-color: green; color: white;")
-            self.label_username_1.setStyleSheet("")
+    def clear_results(self) -> None:
+        while self.results_layout.count() > 1:
+            item = self.results_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    def roll_dice(self):
-        # Roll all enabled dice
-        if self.current_count > 0 and len([dice for dice in self.dice_labels if dice.isEnabled()]) == 0:
-            self.reset_dices()
-        for dice_label in self.dice_labels:
-            if dice_label.isEnabled():
-                dice_label.setText(str(random.randint(1, 6)))
-                dice_label.setStyleSheet("")  # Reset styling
-                # dice_label.setEnabled(True)  # Reset enabled state
-        enabled_dices = [dice for dice in self.dice_labels if dice.isEnabled()]
-        res = [dice.text() for dice in enabled_dices]
-        print(res)
-        # Get result from DiceUtils
-        result = DiceUtils(enabled_dices).count_dice()
-        score = result[0]
-        kept_dice_dict = result[1]  # Dict of dice to KEEP
+    def render_results(self, data: Dict[str, Any]) -> None:
+        self.clear_results()
 
-        # Disable all dice EXCEPT those in the kept_dice_dict
-        # Track the number of each value we want to keep
-        to_keep = kept_dice_dict.copy()
+        stats_widget = QWidget()
+        stats_layout = QGridLayout(stats_widget)
+        stats_layout.setSpacing(12)
 
-        # Process each die
-        for dice_label in self.dice_labels:
-            value = dice_label.text()
+        stats = [
+            ("Documents Parsed", data.get("documents_parsed", 0)),
+            ("Keywords Found", len(data.get("keywords_extracted", []))),
+            ("Clusters", len(data.get("clusters", []))),
+            ("Recommendations", len(data.get("recommendations", []))),
+        ]
+        for idx, (label, value) in enumerate(stats):
+            card = self.create_stat_card(label, str(value))
+            stats_layout.addWidget(card, idx // 2, idx % 2)
 
-            # If this die value is in our "keep" list and we still need more of this value
-            if value in to_keep and to_keep[value] > 0:
-                # Keep this die (leave enabled)
-                to_keep[value] -= 1
-            else:
-                # Disable this die (it's not needed for scoring)
-                dice_label.setStyleSheet("background-color: lightgray; color: gray;")
-                dice_label.setEnabled(False)
+        self.results_layout.insertWidget(0, stats_widget)
 
-        # Show result message
-        player = self.player_name_1 if self.turn == 1 else self.player_name_2
-        message = f"{player}, You rolled {score}." if score > 0 else f"{player}, You rolled nothing."
-        QMessageBox.information(
-            self,
-            "Your turn",
-            message,
+        intent_summary = data.get("intent_summary", {})
+        if not intent_summary and data.get("keywords_extracted"):
+            for kw in data.get("keywords_extracted", []):
+                intent = kw.get("intent") or "informational"
+                intent_summary[intent] = intent_summary.get(intent, 0) + 1
+        if intent_summary:
+            self.results_layout.insertWidget(
+                1, self.create_section_title("Intent Breakdown")
+            )
+            for intent, count in intent_summary.items():
+                item = self.create_list_item(intent, str(count))
+                self.results_layout.insertWidget(self.results_layout.count() - 1, item)
+
+        keywords = data.get("keywords_extracted", [])[:10]
+        if keywords:
+            self.results_layout.insertWidget(1, self.create_section_title("Top Keywords"))
+            for kw in keywords:
+                intent = kw.get("intent")
+                title = kw.get("keyword", "")
+                if intent:
+                    title = f"{title} ({intent})"
+                item = self.create_list_item(
+                    title,
+                    f"{kw.get('tf_idf_score', 0.0):.3f}",
+                )
+                self.results_layout.insertWidget(self.results_layout.count() - 1, item)
+
+        recommendations = data.get("recommendations", [])
+        if recommendations:
+            self.results_layout.insertWidget(self.results_layout.count() - 1, self.create_section_title("Recommendations"))
+            for rec in recommendations:
+                title = rec.get("title", "")
+                description = rec.get("description", "")
+                priority = rec.get("priority", 1)
+                source = rec.get("evidence", {}).get("source")
+                badge = f"{priority}/5"
+                if source == "openai":
+                    title = f"{title} (AI)"
+                item = self.create_list_item(title, badge, description)
+                self.results_layout.insertWidget(self.results_layout.count() - 1, item)
+
+        errors = data.get("errors", [])
+        if errors:
+            error_frame = QFrame()
+            error_frame.setObjectName("AlertError")
+            error_layout = QVBoxLayout(error_frame)
+            error_layout.setContentsMargins(12, 12, 12, 12)
+            error_layout.addWidget(QLabel("⚠️ Errors"))
+            for err in errors:
+                error_layout.addWidget(QLabel(f"• {err}"))
+            self.results_layout.insertWidget(self.results_layout.count() - 1, error_frame)
+
+    def create_stat_card(self, label: str, value: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("StatCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        label_widget = QLabel(label)
+        label_widget.setStyleSheet("color: #6b7280; font-size: 11px; font-weight: bold;")
+        value_widget = QLabel(value)
+        value_widget.setStyleSheet("color: #4f46e5; font-size: 22px; font-weight: bold;")
+        card_layout.addWidget(label_widget)
+        card_layout.addWidget(value_widget)
+        return card
+
+    def create_section_title(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: bold; color: #111827; margin-top: 6px;")
+        return label
+
+    def create_list_item(self, title: str, badge: str, description: str | None = None) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("ListItem")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        header = QHBoxLayout()
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight: bold; color: #111827;")
+        badge_label = QLabel(badge)
+        badge_label.setStyleSheet(
+            "background: #667eea; color: white; padding: 2px 8px; border-radius: 10px;"
         )
-
-        # Store the current score
-        self.current_count += score
-
-        if self.turn == 1:
-            self.current_count_label_1.setText(f"Current count: {self.current_count}")
-        else:
-            self.current_count_label_2.setText(f"Current count: {self.current_count}")
-        if score == 0:
-            self.turn = 2 if self.turn == 1 else 1
-            QMessageBox.information(
-                self,
-                "Change turn",
-                "You rolled nothing. Change turn",
-            )
-            self.turn_marker()
-            self.reset_dices()
-            self.current_count = 0
-            self.clear_current_count_label()
-        # self.free_dices = 5 - len(kept_dice_dict)
-
-    def clear_current_count_label(self):
-        self.current_count_label_1.setText(f"Current count: {self.current_count}")
-        self.current_count_label_2.setText(f"Current count: {self.current_count}")    
-
-    def reset_dices(self):
-        for dice_label in self.dice_labels:
-            dice_label.setEnabled(True)
-            dice_label.setStyleSheet("")  # Reset styling
-
-    def save_score(self):
-        # To be implemented in the next step
-        if self.turn == 1:
-            self.total_score_1 += self.current_count
-            self.total_score_label_1.setText(f"Total score: {self.total_score_1}")
-        else:
-            self.total_score_2 += self.current_count
-            self.total_score_label_2.setText(f"Total score: {self.total_score_2}")
-        self.current_count = 0
-        self.turn = 2 if self.turn == 1 else 1
-        QMessageBox.information(
-            self,
-            "Change turn",
-            "Score saved. Change turn",
-        )
-        self.turn_marker()
-        self.reset_dices()
-        self.clear_current_count_label()
-        self.check_winner()
-
-    def check_winner(self):
-        if self.total_score_1 >= 200:
-            QMessageBox.information(
-                self,
-                "Winner",
-                f"{self.player_name_1} wins!",
-            )
-            self.game_score_1 += 1
-            self.game_score.setText(f"Game score: {self.game_score_1} : {self.game_score_2}")
-            self.reset_dices()
-            self.clear_current_count_label()
-            self.clear_total_count()
-            # self.close()
-        elif self.total_score_2 >= 200:
-            QMessageBox.information(
-                self,
-                "Winner",
-                f"{self.player_name_2} wins!",
-            )
-            # self.close()
-            self.game_score_2 += 1
-            self.game_score.setText(f"Game score: {self.game_score_1} : {self.game_score_2}")
-            self.reset_dices()
-            self.clear_current_count_label()
-            self.clear_total_count()
-
-    def clear_total_count(self):
-        self.total_score_1 = 0
-        self.total_score_2 = 0
-        self.total_score_label_1.setText(f"Total score: {self.total_score_1}")
-        self.total_score_label_2.setText(f"Total score: {self.total_score_2}")  
-        
-        # if hasattr(self, "Total_score_label"):
-        #     self.total_score_label.setText(f"Total score: {self.total_score}")
-        # else:
-        #     self.total_score_label = QLabel(f"Total: {self.total_score}")
-        #     self.total_score_label.setFont(QFont("Arial", 14, QFont.Bold))
-        #     self.layout.addWidget(self.total_score_label)
-
-    def _dice_counter(self, dice):
-        count = 0
-        # check if all dice are the same
-        if len(set(dice)) == 1:
-            if dice[0].text() == "1":
-                return 1000
-            return int(dice[0].text() * 30)
-        # Check if 4s
-        if len(set(dice)) == 2:
-            if dice[0].text() == dice[1].text():
-                if dice[0].text() == "1":
-                    return 2000
-                return int(dice[0].text()) * 200
-        # count 5s
-        count += sum(5 for d in dice if d.text() == "5")
-        # count 10
-        count += sum(10 for d in dice if d.text() == "1")
-        return count
-
-    def _dict_dice(self):
-        dice_dict = {}
-        for dice in self.dice_labels:
-            dice_dict[dice.text()] = dice_dict.get(dice.text(), 0) + 1
-        return dice_dict
+        header.addWidget(title_label)
+        header.addStretch(1)
+        header.addWidget(badge_label)
+        layout.addLayout(header)
+        if description:
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+            layout.addWidget(desc_label)
+        return frame
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = SeoMcpAgent()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
+    

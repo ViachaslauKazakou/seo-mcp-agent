@@ -1,0 +1,38 @@
+# Table of contents
+# Learn more at https://jupyterbook.org/customize/toc.html
+
+format: jb-book
+root: index
+chapters:
+  - file: getting-started
+    sections:
+      - file: installation
+      - file: quick-start
+      - file: configuration
+  
+  - file: user-guide
+    sections:
+      - file: web-interface
+      - file: desktop-app
+      - file: cli-usage
+      - file: api-reference
+  
+  - file: features
+    sections:
+      - file: keyword-extraction
+      - file: intent-detection
+      - file: clustering
+      - file: serp-analysis
+  
+  - file: development
+    sections:
+      - file: architecture
+      - file: api-docs
+      - file: contributing
+      - file: testing
+  
+  - file: examples
+    sections:
+      - file: examples/basic-analysis
+      - file: examples/advanced-clustering
+      - file: examples/custom-integration

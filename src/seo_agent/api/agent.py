@@ -1,13 +1,14 @@
 """SEO agent orchestrator."""
 
 import logging
+from collections import Counter
 from datetime import datetime
 from typing import List
 
 from seo_agent.models import (
     InputSpec, ParsedDocument, KeywordCandidate, Cluster, Recommendation, RunReport
 )
-from seo_agent.tools.hf.fetcher import Fetcher, Parser
+from seo_agent.tools.hf.fetcher import Fetcher, PlayWrightFetcher, Parser
 from seo_agent.tools.hf.keywords import KeywordExtractor
 from seo_agent.tools.hf.clustering import Embedder, SemanticClusterer
 from seo_agent.tools.openai.embedder import OpenAIEmbedder
@@ -20,7 +21,8 @@ class SEOAgent:
     """Orchestrates SEO analysis pipeline."""
     
     def __init__(self):
-        self.fetcher = Fetcher()
+        self.fetcher = None  # Will be initialized per-request
+        self.playwright_fetcher = PlayWrightFetcher()
         self.parser = Parser()
         self.keyword_extractor = KeywordExtractor()
         self.embedder = None  # Will be initialized per-request
@@ -30,16 +32,24 @@ class SEOAgent:
     async def analyze(self, input_spec: InputSpec) -> RunReport:
         """Run full SEO analysis."""
         logger.info(f"Starting analysis for URLs: {input_spec.urls}")
-        logger.info(f"Settings: embedding_provider={input_spec.embedding_provider}, use_openai={input_spec.use_openai}")
+        logger.info(f"Settings: fetcher_type={input_spec.fetcher_type}, embedding_provider={input_spec.embedding_provider}, use_openai={input_spec.use_openai}")
         
         started_at = datetime.now()
         errors: List[str] = []
         documents: List[ParsedDocument] = []
         
+        # Initialize selected fetcher
+        if input_spec.fetcher_type == "playwright":
+            logger.info("Using PlayWright fetcher for JavaScript-heavy sites")
+            fetcher = self.playwright_fetcher
+        else:
+            logger.info("Using httpx fetcher for standard HTML sites")
+            fetcher = Fetcher()
+        
         # Step 1: Fetch and parse URLs
         for url in input_spec.urls[:input_spec.max_pages]:
             try:
-                fetch_result = await self.fetcher.fetch(str(url))
+                fetch_result = await fetcher.fetch(str(url))
                 if fetch_result.error:
                     errors.append(f"Fetch error for {url}: {fetch_result.error}")
                     continue
@@ -69,6 +79,19 @@ class SEOAgent:
                 logger.error(error_msg, exc_info=True)
                 errors.append(error_msg)
         
+        # Step 2.1: Build intent summary
+        intent_summary: dict[str, int] = {}
+        if keywords:
+            def normalize_intent(intent_value: object) -> str:
+                if intent_value is None:
+                    return "informational"
+                value = getattr(intent_value, "value", intent_value)
+                return str(value)
+
+            intent_summary = dict(
+                Counter(normalize_intent(kw.intent) for kw in keywords[:20])
+            )
+
         # Step 3: Generate embeddings
         clusters: List[Cluster] = []
         if keywords:
@@ -129,6 +152,7 @@ class SEOAgent:
                 keywords_extracted=keywords[:20],  # Top 20
                 clusters=clusters,
                 recommendations=recommendations,
+                intent_summary=intent_summary,
                 started_at=started_at,
                 errors=errors,
             )
