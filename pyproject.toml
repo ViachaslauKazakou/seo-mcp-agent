@@ -11,8 +11,8 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-# Исправлено для совместимости с PyInstaller (поддержка 3.14 еще не добавлена)
-requires-python = ">=3.11, <3.14"
+# Updated to >=3.12 for sphinx-autodoc-typehints compatibility
+requires-python = ">=3.12, <3.14"
 keywords = ["seo", "agent", "nlp", "keywords"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -39,6 +39,8 @@ dependencies = [
     "sqlmodel>=0.0.14",
     "python-dotenv>=1.0.0",
     "openai>=1.0.0",
+    "jupyter-book (>=2.1.2,<3.0.0)",
+    "sphinx-autodoc-typehints (>=3.6.2,<4.0.0)",
 ]
 
 [project.optional-dependencies]

@@ -122,6 +122,12 @@ class Cluster(BaseModel):
     cohesion_score: float = Field(..., description="Silhouette score (0-1)")
     topic_summary: Optional[str] = None
     suggested_content_topics: List[str] = Field(default_factory=list)
+    
+    # Extended cluster info
+    size: int = Field(default=0, description="Number of keywords in cluster")
+    avg_tfidf: float = Field(default=0.0, description="Average TF-IDF score of keywords")
+    top_keywords: List[str] = Field(default_factory=list, description="Top 5 keywords by TF-IDF")
+    intent_distribution: Dict[str, int] = Field(default_factory=dict, description="Intent counts in cluster")
 
 
 # === RECOMMENDATIONS ===
