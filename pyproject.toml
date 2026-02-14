@@ -44,6 +44,7 @@ dependencies = [
     "sphinx-book-theme>=1.1.0",
     "myst-parser>=5.0.0",
     "sphinx-autodoc-typehints>=3.6.0",
+    "sphinx-design (>=0.7.0,<0.8.0)",
 ]
 
 [project.optional-dependencies]
@@ -84,3 +85,8 @@ disallow_untyped_defs = false
 [tool.isort]
 profile = "black"
 line_length = 100
+
+[dependency-groups]
+dev = [
+    "sphinx-autobuild (>=2025.8.25,<2026.0.0)"
+]

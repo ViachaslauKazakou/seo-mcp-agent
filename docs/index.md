@@ -1,6 +1,6 @@
 # SEO MCP Agent
 
-![SEO Agent Logo](logo.svg)
+![SEO Agent Logo](logo.png)
 
 **Автономный SEO-агент для анализа ключевых слов, определения интента и рекомендаций по оптимизации.**
 
@@ -8,12 +8,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
-:::{grid-item-card} 🏁 Current status
-:link: semantic-analyze-status
-:link-type: doc
-
----
-
 
 ## 🚀 Возможности
 
@@ -39,6 +33,13 @@
 Установка, быстрый старт и настройка проекта
 :::
 
+:::{grid-item-card} 🏁 Текущий статус
+:link: semantic-analyze-status
+:link-type: doc
+
+Семантический анализ
+:::
+
 :::{grid-item-card} 📖 User Guide
 :link: user-guide
 :link-type: doc
@@ -58,6 +59,13 @@
 :link-type: doc
 
 Архитектура, API docs и contribution guide
+:::
+
+:::{grid-item-card} 📖 Документация
+:link: documentation-setup
+:link-type: doc
+
+Настройка и разворачивание документации
 :::
 
 ::::
@@ -103,9 +111,49 @@ for kw in keywords[:5]:
 
 ---
 
-## 🌟 Next Steps
+## 🌟 Содержание
 
-```{tableofcontents}
+```{toctree}
+:maxdepth: 2
+:caption: Документация
+
+getting-started
+installation
+quick-start
+user-guide
+features
+configuration
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Возможности
+
+keyword-extraction
+intent-detection
+clustering
+serp-analysis
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Интерфейсы
+
+web-interface
+desktop-app
+cli-usage
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Разработка
+
+development
+architecture
+api-reference
+contributing
+testing
+documentation-setup
 ```
 
 ---

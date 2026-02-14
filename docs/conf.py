@@ -18,12 +18,14 @@ extensions = [
     'sphinx.ext.intersphinx',
     'myst_parser',
     'sphinx_autodoc_typehints',
+    'sphinx_design',
 ]
 
 # MyST configuration
 myst_enable_extensions = [
     "colon_fence",
     "deflist",
+    "tasklist",
 ]
 
 # Source file suffixes
