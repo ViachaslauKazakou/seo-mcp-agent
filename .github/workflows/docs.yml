@@ -1,15 +1,28 @@
-name: Deploy Jupyter Book to GitHub Pages
+name: Deploy Sphinx Documentation to GitHub Pages
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+      - 'pyproject.toml'
   pull_request:
     branches:
       - main
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     
     steps:
@@ -36,17 +49,27 @@ jobs:
       
       - name: Install dependencies
         run: |
-          poetry install --with docs
+          poetry install
       
-      - name: Build Jupyter Book
+      - name: Build Sphinx documentation
         run: |
-          poetry run jupyter-book build docs
+          cd docs
+          poetry run sphinx-build -b html . _build/html
       
-      - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/_build/html
-          publish_branch: gh-pages
-          force_orphan: true
+          path: docs/_build/html
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
