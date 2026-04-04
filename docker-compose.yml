@@ -31,6 +31,30 @@ services:
           memory: 512M
           cpus: '1.0'
 
+  # NVIDIA NIM LLM Service
+  llm:
+    image: nvcr.io/nim/nvidia/nvidia-nemotron-nano-9b-v2:latest
+    container_name: seo_agent_llm
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY:-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}
+    ports:
+      - "8050:8000"
+    volumes:
+      - llm_cache:/opt/nim/.cache
+    networks:
+      - seo_network
+    shm_size: 16gb
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+          cpus: '8.0'
+        reservations:
+          memory: 16G
+          cpus: '4.0'
+
   # Optional: PGAdmin for database management
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -55,6 +79,8 @@ volumes:
   postgres_data:
     driver: local
   pgadmin_data:
+    driver: local
+  llm_cache:
     driver: local
 
 networks:

@@ -59,7 +59,7 @@ poetry run python -m seo_agent.cli analyze --url https://example.com \
 ### Python API
 ```python
 from seo_agent.models import InputSpec
-from seo_agent.api.agent import SEOAgent
+from seo_agent.api.agent import SeoAgent
 
 input_spec = InputSpec(
     urls=["https://example.com"],
@@ -67,7 +67,7 @@ input_spec = InputSpec(
     openai_embedding_model="text-embedding-3-small"
 )
 
-agent = SEOAgent()
+agent = SeoAgent()
 report = await agent.analyze(input_spec)
 ```
 
