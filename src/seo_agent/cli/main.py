@@ -6,7 +6,7 @@ import json
 from typing import List
 
 from seo_agent.models import InputSpec
-from seo_agent.api.agent import SEOAgent
+from seo_agent.api.agent import SeoAgent
 
 
 @click.group()
@@ -51,7 +51,7 @@ def analyze(url: tuple, output: str, depth: int, max_pages: int, use_openai: boo
     )
     
     # Run analysis
-    agent = SEOAgent()
+    agent = SeoAgent()
     report = asyncio.run(agent.analyze(input_spec))
     
     # Display results

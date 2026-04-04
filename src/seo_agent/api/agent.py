@@ -17,7 +17,7 @@ from seo_agent.tools.openai.recommender import OpenAIRecommender
 logger = logging.getLogger(__name__)
 
 
-class SEOAgent:
+class SeoAgent:
     """Orchestrates SEO analysis pipeline."""
     
     def __init__(self):

@@ -8,14 +8,14 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from src.seo_agent.models import InputSpec, RunReport
-from src.seo_agent.api.agent import SEOAgent
+from src.seo_agent.api.agent import SeoAgent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # In-memory storage (replace with DB in production)
-agent = SEOAgent()
+agent = SeoAgent()
 run_cache: dict[str, RunReport] = {}
 
 # Template setup
