@@ -684,7 +684,7 @@ async def clusterize_website_keywords(website_id: int, payload: ClusterizeInput)
 
 @router.get("/api/websites/{website_id}/clusters")
 async def list_website_clusters(website_id: int):
-    """Return saved clusters for latest run of selected website."""
+    """Return saved clusters for latest run of selected website. """
     try:
         db_manager = get_db_manager()
         with db_manager.session_scope() as session:
