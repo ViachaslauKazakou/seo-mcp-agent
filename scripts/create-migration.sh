@@ -5,6 +5,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+COMPOSE_FILE="${COMPOSE_FILE:-containers/docker-compose.dev.yml}"
+DOCKER_COMPOSE=(docker-compose -f "$COMPOSE_FILE")
 
 # Check if migration message is provided
 if [ -z "$1" ]; then
@@ -28,18 +30,15 @@ cd "$PROJECT_ROOT"
 
 # Check if database is accessible
 echo "📡 Checking database connection..."
-if ! docker-compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
+if ! "${DOCKER_COMPOSE[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
     echo "❌ Database is not accessible. Please run ./scripts/start-db.sh first."
     exit 1
 fi
 
 echo "✅ Database connection OK"
 
-# Create migration
-cd "$PROJECT_ROOT/src/db"
-
 echo "🔍 Detecting schema changes..."
-poetry run alembic -c alembic.ini revision --autogenerate -m "$MIGRATION_MESSAGE"
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini revision --autogenerate -m \"$MIGRATION_MESSAGE\""
 
 echo ""
 echo "✅ Migration created successfully!"

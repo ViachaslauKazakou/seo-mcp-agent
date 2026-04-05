@@ -3,6 +3,8 @@
 .PHONY: docker-up docker-down docker-build docker-logs
 .DEFAULT_GOAL := help
 
+DOCKER_DEV_COMPOSE := docker-compose -f containers/docker-compose.dev.yml
+
 # Colors for terminal output
 BLUE := \033[0;34m
 GREEN := \033[0;32m
@@ -83,7 +85,7 @@ db-logs: ## View PostgreSQL logs
 
 db-status: ## Check database status
 	@echo "$(BLUE)📊 Database Status:$(NC)"
-	@docker-compose ps postgres
+	@$(DOCKER_DEV_COMPOSE) ps postgres
 
 ##@ Application
 
@@ -147,33 +149,47 @@ docs-clean: ## Clean documentation build
 
 ##@ Docker
 
-docker-up: ## Start all Docker services
+docker-up: docker-dev-up ## Start Docker dev services
+
+docker-down: docker-dev-down ## Stop Docker dev services
+
+docker-build: docker-dev-build ## Build Docker dev images
+
+docker-logs: docker-dev-logs ## View Docker dev logs
+
+docker-dev-up: ## Start Docker dev services from containers/docker-compose.dev.yml
 	@echo "$(BLUE)🐳 Starting Docker services...$(NC)"
-	docker-compose up -d
+	$(DOCKER_DEV_COMPOSE) up -d
+	$(DOCKER_DEV_COMPOSE) logs -f
 
-docker-down: ## Stop all Docker services
+
+docker-dev-down: ## Stop Docker dev services
 	@echo "$(BLUE)🐳 Stopping Docker services...$(NC)"
-	docker-compose down
+	$(DOCKER_DEV_COMPOSE) down
 
-docker-build: ## Build Docker images
+docker-dev-build: ## Build Docker dev images
 	@echo "$(BLUE)🐳 Building Docker images...$(NC)"
-	docker-compose build
+	$(DOCKER_DEV_COMPOSE) build
 
-docker-logs: ## View Docker logs
+docker-dev-logs: ## View Docker dev logs
 	@echo "$(BLUE)📋 Docker logs (Ctrl+C to exit):$(NC)"
-	docker-compose logs -f
+	$(DOCKER_DEV_COMPOSE) logs -f
 
-docker-ps: ## Show Docker container status
+docker-ps: docker-dev-ps ## Show Docker container status
+
+docker-dev-ps: ## Show Docker dev container status
 	@echo "$(BLUE)📊 Docker Status:$(NC)"
-	@docker-compose ps
+	@$(DOCKER_DEV_COMPOSE) ps
 
-docker-clean: ## Remove Docker containers and volumes
+docker-clean: docker-dev-clean ## Remove Docker containers and volumes
+
+docker-dev-clean: ## Remove Docker dev containers and volumes
 	@echo "$(RED)⚠️  WARNING: This will delete all Docker data!$(NC)"
 	@read -p "Are you sure? (yes/no): " -n 3 -r; \
 	if [ "$$REPLY" = "yes" ]; then \
 		echo ""; \
 		echo "$(BLUE)🧹 Cleaning Docker...$(NC)"; \
-		docker-compose down -v; \
+		$(DOCKER_DEV_COMPOSE) down -v; \
 		echo "$(GREEN)✅ Docker cleaned!$(NC)"; \
 	else \
 		echo ""; \

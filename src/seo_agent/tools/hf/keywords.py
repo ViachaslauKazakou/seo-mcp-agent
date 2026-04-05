@@ -19,10 +19,31 @@ from seo_agent.tools.hf.config import (
 
 class KeywordExtractor:
     """Extract keywords from parsed documents."""
-    
-    def __init__(self, max_keywords: int = 50, ngram_range: tuple = (1, 3)):
+
+    def __init__(
+        self,
+        max_keywords: int = 50,
+        ngram_range: tuple = (1, 3),
+        extra_phrases: dict | None = None,
+    ):
         self.max_keywords = max_keywords
         self.ngram_range = ngram_range
+
+        # Build per-intent phrase lists: config defaults + any domain-specific extras.
+        self._phrases: dict[str, list[str]] = {
+            "transactional": list(TRANSACTIONAL_PHRASES),
+            "commercial": list(COMMERCIAL_PHRASES),
+            "navigational": list(NAVIGATIONAL_PHRASES),
+            "informational": list(INFORMATIONAL_PHRASES),
+        }
+        if extra_phrases:
+            for intent_key, phrases in extra_phrases.items():
+                intent_key_norm = intent_key.lower()
+                existing = self._phrases.setdefault(intent_key_norm, [])
+                existing_set = {p.lower() for p in existing}
+                self._phrases[intent_key_norm] = existing + [
+                    p for p in phrases if p.lower() not in existing_set
+                ]
     
     def extract(self, documents: List[ParsedDocument]) -> List[KeywordCandidate]:
         """Extract keywords from multiple documents."""
@@ -107,11 +128,11 @@ class KeywordExtractor:
             print(f"Keyword extraction error: {e}")
             return []
     
-    @staticmethod
-    def _detect_intent(keyword: str) -> IntentType:
+    def _detect_intent(self, keyword: str) -> IntentType:
         """Intent detection heuristic based on configurable rules.
 
         Supported intents: informational, navigational, commercial, transactional.
+        Merges built-in config phrases with any domain-specific extras passed at init.
         """
         keyword_lower = keyword.lower().strip()
 
@@ -122,19 +143,19 @@ class KeywordExtractor:
             )
 
         # Transactional intent: ready to act
-        if matches_any(TRANSACTIONAL_PHRASES):
+        if matches_any(self._phrases.get("transactional", [])):
             return IntentType.TRANSACTIONAL
 
         # Commercial investigation: compare and evaluate
-        if matches_any(COMMERCIAL_PHRASES):
+        if matches_any(self._phrases.get("commercial", [])):
             return IntentType.COMMERCIAL
 
         # Navigational: find a specific site/page
-        if matches_any(NAVIGATIONAL_PHRASES):
+        if matches_any(self._phrases.get("navigational", [])):
             return IntentType.NAVIGATIONAL
 
         # Informational: learn or understand
-        if matches_any(INFORMATIONAL_PHRASES):
+        if matches_any(self._phrases.get("informational", [])):
             return IntentType.INFORMATIONAL
 
         return IntentType.INFORMATIONAL

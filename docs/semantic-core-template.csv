@@ -1,0 +1,11 @@
+cluster_id,cluster_name,intent_primary,intent_secondary,keywords_count,priority,target_url,page_type,status,owner,notes
+1,Грузоперевозки по Беларуси,commercial,,0,high,/gruzoperevozki-belarus,service_page,planned,,
+2,Грузоперевозки Минск,transactional,commercial,0,high,/gruzoperevozki-minsk,landing_page,planned,,
+3,Стоимость грузоперевозки,commercial,transactional,0,high,/stoimost-gruzoperevozki,pricing_page,planned,,
+4,Заказать грузоперевозку,transactional,,0,high,/zakazat-gruzoperevozku,conversion_page,planned,,
+5,Международные грузоперевозки,commercial,informational,0,medium,/mezhdunarodnye-gruzoperevozki,service_page,planned,,
+6,Как выбрать перевозчика,informational,commercial,0,medium,/blog/kak-vybrat-perevozchika,blog_article,planned,,
+7,Документы для перевозки,informational,,0,medium,/blog/dokumenty-dlya-gruzoperevozki,blog_article,planned,,
+8,Отслеживание груза,navigational,transactional,0,medium,/tracking,tool_page,planned,,
+9,FAQ по грузоперевозкам,informational,,0,low,/faq-gruzoperevozki,faq_page,planned,,
+10,Отзывы о перевозке,commercial,navigational,0,low,/otzyvy,trust_page,planned,,

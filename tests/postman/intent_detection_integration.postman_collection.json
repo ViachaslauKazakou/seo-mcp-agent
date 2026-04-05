@@ -1,0 +1,193 @@
+{
+  "info": {
+    "name": "SEO MCP - Intent Detection Integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Integration flow for intent detection around keywords containing 'достав'."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8030"
+    },
+    {
+      "key": "phraseId",
+      "value": ""
+    },
+    {
+      "key": "websiteId",
+      "value": ""
+    },
+    {
+      "key": "analysisRunId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1) Create global phrase: доставка -> transactional",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"intent\": \"transactional\",\n  \"phrase\": \"доставка\",\n  \"website_id\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/intent-phrases",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "intent-phrases"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "",
+              "const data = pm.response.json();",
+              "pm.expect(data).to.have.property('id');",
+              "pm.expect(data.intent).to.eql('transactional');",
+              "pm.expect(data.phrase).to.eql('доставка');",
+              "pm.collectionVariables.set('phraseId', String(data.id));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) Collect keywords from dellin.ru",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"urls\": [\"https://www.dellin.ru\"],\n  \"fetcher_type\": \"httpx\",\n  \"embedding_provider\": \"hf\",\n  \"use_openai\": false\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/collect",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "collect"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const data = pm.response.json();",
+              "pm.expect(data).to.have.property('website_id');",
+              "pm.expect(data).to.have.property('analysis_run_id');",
+              "pm.collectionVariables.set('websiteId', String(data.website_id));",
+              "pm.collectionVariables.set('analysisRunId', String(data.analysis_run_id));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) Get latest keywords for collected website",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/websites/{{websiteId}}/keywords",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "websites",
+            "{{websiteId}}",
+            "keywords"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const data = pm.response.json();",
+              "pm.expect(data).to.have.property('items');",
+              "",
+              "const deliveryLike = data.items.filter((k) => /достав/i.test(k.keyword));",
+              "pm.test('Found at least one keyword containing достав', function () {",
+              "  pm.expect(deliveryLike.length, 'No keywords matched /достав/i').to.be.above(0);",
+              "});",
+              "",
+              "const notTransactional = deliveryLike.filter((k) => k.intent !== 'transactional');",
+              "pm.test('All достав* keywords are transactional', function () {",
+              "  pm.expect(notTransactional, JSON.stringify(notTransactional, null, 2)).to.have.length(0);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) Cleanup: delete created phrase",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/intent-phrases/{{phraseId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "intent-phrases",
+            "{{phraseId}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 204', function () {",
+              "  pm.response.to.have.status(204);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

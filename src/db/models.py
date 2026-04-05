@@ -83,6 +83,7 @@ class Website(Base):
     # Relationships
     analysis_runs: Mapped[List["AnalysisRun"]] = relationship("AnalysisRun", back_populates="website", cascade="all, delete-orphan")
     serp_positions: Mapped[List["SerpPosition"]] = relationship("SerpPosition", back_populates="website", cascade="all, delete-orphan")
+    intent_phrases: Mapped[List["IntentPhrase"]] = relationship("IntentPhrase", back_populates="website", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
         return f"<Website(id={self.id}, domain='{self.domain}')>"
@@ -218,6 +219,33 @@ class KeywordCluster(Base):
     
     def __repr__(self) -> str:
         return f"<KeywordCluster(id={self.id}, label={self.cluster_label}, size={self.size})>"
+
+
+# ==================== INTENT PHRASES ====================
+class IntentPhrase(Base):
+    """Custom phrases for intent detection (global or per-domain)."""
+
+    __tablename__ = "intent_phrases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    website_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("websites.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    intent: Mapped[IntentType] = mapped_column(SQLEnum(IntentType), nullable=False, index=True)
+    phrase: Mapped[str] = mapped_column(String(500), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    website: Mapped[Optional["Website"]] = relationship("Website", back_populates="intent_phrases")
+
+    __table_args__ = (
+        Index("ix_intent_phrases_website_intent", "website_id", "intent"),
+    )
+
+    def __repr__(self) -> str:
+        scope = f"website_id={self.website_id}" if self.website_id else "global"
+        return f"<IntentPhrase(id={self.id}, intent={self.intent.value}, phrase='{self.phrase}', {scope})>"
 
 
 # ==================== SERP RESULTS ====================

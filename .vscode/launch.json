@@ -42,9 +42,10 @@
             "jinja": true
         },
         {
-            "name": "Portal: Docker Debug",
+            "name": "SEO MCP: Docker Attach (debugpy)",
             "type": "debugpy",
             "request": "attach",
+            // "preLaunchTask": "Docker Dev: Up",
             "connect": {
                 "host": "localhost",
                 "port": 5678

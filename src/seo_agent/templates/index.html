@@ -3,10 +3,36 @@
 {% block title %}SEO Agent - Analyze{% endblock %}
 
 {% block content %}
-    <h1 class="mb-2">🔍 SEO Agent</h1>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h1 class="mb-0">🔍 SEO Agent</h1>
+        <div class="d-flex gap-2">
+            <a href="/keywords" class="btn btn-outline-secondary btn-sm">Keyword Workspace</a>
+            <a href="/clusters" class="btn btn-outline-secondary btn-sm">Clusters</a>
+        </div>
+    </div>
     <p class="subtitle">Analyze your website for SEO opportunities</p>
     
     <form id="form" class="mb-4">
+        <div class="mb-3">
+            <label for="saved-url-select" class="form-label">Saved URLs from DB</label>
+            <div class="input-group">
+                <select id="saved-url-select" class="form-select">
+                    <option value="">Select URL from DB...</option>
+                </select>
+                <button class="btn btn-outline-secondary" type="button" id="use-saved-url-btn">Use URL</button>
+            </div>
+            <small class="form-text text-muted">
+                URLs are unique by domain. Selecting one fills the analyze form.
+            </small>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label">Recent Reports For Selected URL</label>
+            <div id="run-history" class="list-group">
+                <div class="list-group-item text-muted">Select URL from DB to view history</div>
+            </div>
+        </div>
+
         <div class="mb-3">
             <input 
                 type="url" 
@@ -115,9 +141,14 @@
             </div>
         </div>
         
-        <button type="submit" id="submit-btn" class="btn btn-primary btn-lg w-100">
-            Analyze
-        </button>
+        <div class="d-flex gap-2">
+            <button type="submit" id="submit-btn" class="btn btn-primary btn-lg flex-grow-1">
+                Analyze
+            </button>
+            <button type="button" id="collect-btn" class="btn btn-outline-primary btn-lg flex-grow-1">
+                Collect Keywords
+            </button>
+        </div>
     </form>
     
     <div id="result" class="alert alert-custom" style="display: none;">
@@ -126,13 +157,36 @@
     </div>
 
     <script>
+        function setCookie(name, value, days = 365) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = `expires=${date.toUTCString()}`;
+            document.cookie = `${name}=${encodeURIComponent(value)};${expires};path=/`;
+        }
+
+        function getCookie(name) {
+            const prefix = `${name}=`;
+            const cookies = document.cookie.split(';');
+            for (let index = 0; index < cookies.length; index += 1) {
+                const cookie = cookies[index].trim();
+                if (cookie.startsWith(prefix)) {
+                    return decodeURIComponent(cookie.substring(prefix.length));
+                }
+            }
+            return null;
+        }
+
         const form = document.getElementById('form');
         const urlInput = document.getElementById('url');
+        const savedUrlSelect = document.getElementById('saved-url-select');
+        const useSavedUrlBtn = document.getElementById('use-saved-url-btn');
+        const runHistoryDiv = document.getElementById('run-history');
         const embeddingProviderRadios = document.querySelectorAll('input[name="embedding-provider"]');
         const openaiEmbeddingModelDiv = document.getElementById('openai-embedding-model-div');
         const openaiEmbeddingModelSelect = document.getElementById('openai-embedding-model');
         const useOpenaiCheckbox = document.getElementById('use-openai');
         const submitBtn = document.getElementById('submit-btn');
+        const collectBtn = document.getElementById('collect-btn');
         const resultDiv = document.getElementById('result');
         const statusDiv = document.getElementById('status');
         const resultsContent = document.getElementById('results-content');
@@ -147,6 +201,146 @@
                 }
             });
         });
+
+        async function loadSavedUrls(selectedWebsiteId = null) {
+            try {
+                const response = await fetch('/api/urls');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                const items = Array.isArray(payload.items) ? payload.items : [];
+
+                savedUrlSelect.innerHTML = '<option value="">Select URL from DB...</option>';
+
+                items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.url;
+                    option.textContent = `${item.url} (id: ${item.website_id})`;
+                    option.dataset.websiteId = String(item.website_id);
+                    savedUrlSelect.appendChild(option);
+                });
+
+                savedUrlSelect.disabled = items.length === 0;
+                useSavedUrlBtn.disabled = items.length === 0;
+
+                if (selectedWebsiteId) {
+                    const target = Array.from(savedUrlSelect.options).find(
+                        opt => opt.dataset.websiteId === String(selectedWebsiteId)
+                    );
+                    if (target) {
+                        target.selected = true;
+                        await loadRunHistory(selectedWebsiteId);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load saved URLs:', error);
+                savedUrlSelect.disabled = true;
+                useSavedUrlBtn.disabled = true;
+            }
+        }
+
+        async function loadRunHistory(websiteId) {
+            if (!websiteId) {
+                runHistoryDiv.innerHTML = '<div class="list-group-item text-muted">Select URL from DB to view history</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/websites/${websiteId}/runs`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                const runs = Array.isArray(payload.items) ? payload.items : [];
+
+                if (runs.length === 0) {
+                    runHistoryDiv.innerHTML = '<div class="list-group-item text-muted">No reports yet for this URL</div>';
+                    return;
+                }
+
+                runHistoryDiv.innerHTML = runs.map(run => {
+                    const statusClass = run.status === 'completed' ? 'success' : (run.status === 'failed' ? 'danger' : 'warning');
+                    const started = run.started_at ? new Date(run.started_at).toLocaleString() : 'n/a';
+                    return `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>Run #${run.analysis_run_id}</strong>
+                                    <span class="badge bg-${statusClass} ms-2">${run.status}</span>
+                                    <div class="small text-muted mt-1">Started: ${started}</div>
+                                </div>
+                                <div class="text-end small">
+                                    <div>Pages: <strong>${run.pages_analyzed}</strong></div>
+                                    <div>Keywords: <strong>${run.total_keywords}</strong></div>
+                                    <div>Clusters: <strong>${run.total_clusters}</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Failed to load run history:', error);
+                runHistoryDiv.innerHTML = '<div class="list-group-item text-danger">Failed to load history</div>';
+            }
+        }
+
+        function applySelectedUrl() {
+            const selectedUrl = savedUrlSelect.value;
+            if (selectedUrl) {
+                urlInput.value = selectedUrl;
+                urlInput.focus();
+            }
+
+            const selectedOption = savedUrlSelect.options[savedUrlSelect.selectedIndex];
+            const websiteId = selectedOption?.dataset?.websiteId;
+            if (websiteId) {
+                setCookie('selected_website_id', websiteId);
+            }
+
+            let selectedDomain = null;
+            try {
+                if (selectedUrl) {
+                    selectedDomain = new URL(selectedUrl).hostname.toLowerCase();
+                }
+            } catch (error) {
+                selectedDomain = selectedUrl || null;
+            }
+            if (selectedDomain) {
+                setCookie('selected_domain', selectedDomain);
+            }
+
+            const keywordsLink = document.querySelector('a[href="/keywords"]');
+            const clustersLink = document.querySelector('a[href="/clusters"]');
+            if (keywordsLink) {
+                keywordsLink.href = websiteId
+                    ? `/keywords?website_id=${websiteId}`
+                    : (selectedDomain ? `/keywords?domain=${encodeURIComponent(selectedDomain)}` : '/keywords');
+            }
+            if (clustersLink) {
+                clustersLink.href = websiteId
+                    ? `/clusters?website_id=${websiteId}`
+                    : (selectedDomain ? `/clusters?domain=${encodeURIComponent(selectedDomain)}` : '/clusters');
+            }
+
+            loadRunHistory(websiteId);
+        }
+
+        useSavedUrlBtn.addEventListener('click', applySelectedUrl);
+        savedUrlSelect.addEventListener('change', applySelectedUrl);
+
+        const cookieWebsiteId = getCookie('selected_website_id');
+        loadSavedUrls(cookieWebsiteId)
+            .then(() => {
+                if (savedUrlSelect.value) {
+                    applySelectedUrl();
+                }
+            })
+            .catch(error => {
+                console.error('Failed to restore selected domain from cookie:', error);
+            });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -197,6 +391,10 @@
 
                 // Render results
                 renderResults(data);
+
+                // Refresh saved URLs and history after new report persisted in DB
+                const currentWebsiteId = savedUrlSelect.options[savedUrlSelect.selectedIndex]?.dataset?.websiteId || null;
+                await loadSavedUrls(currentWebsiteId);
             } catch (error) {
                 statusDiv.className = 'alert alert-danger';
                 statusDiv.innerHTML = '<strong>❌ Error:</strong> ' + error.message;
@@ -204,6 +402,93 @@
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Analyze';
+                collectBtn.disabled = false;
+            }
+        });
+
+        collectBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                urlInput.focus();
+                return;
+            }
+
+            const fetcherType = document.querySelector('input[name="fetcher-type"]:checked').value;
+
+            collectBtn.disabled = true;
+            submitBtn.disabled = true;
+            collectBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Collecting...';
+            resultDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-info';
+            statusDiv.innerHTML = '<strong>⏳</strong> Collecting keywords from ' + url;
+            resultsContent.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/collect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        urls: [url],
+                        fetcher_type: fetcherType,
+                        use_openai: false,
+                        embedding_provider: 'hf',
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                statusDiv.className = 'alert alert-success';
+                statusDiv.innerHTML = '<strong>✅</strong> Keywords collected';
+
+                let html = `
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body">
+                                    <div class="text-muted small text-uppercase fw-bold">Pages Parsed</div>
+                                    <div class="fs-3 fw-bold text-primary mt-2">${data.documents_parsed}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body">
+                                    <div class="text-muted small text-uppercase fw-bold">Keywords Saved</div>
+                                    <div class="fs-3 fw-bold text-primary mt-2">${data.total_keywords}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <a href="/keywords?website_id=${data.website_id}" class="btn btn-outline-secondary btn-sm">
+                        Open in Keyword Workspace →
+                    </a>
+                `;
+
+                if (data.errors && data.errors.length > 0) {
+                    html += `
+                        <div class="alert alert-warning mt-3">
+                            <h6 class="alert-heading">⚠️ Errors</h6>
+                            <ul class="mb-0">${data.errors.map(e => `<li>${e}</li>`).join('')}</ul>
+                        </div>
+                    `;
+                }
+
+                resultsContent.innerHTML = html;
+
+                const currentWebsiteId = data.website_id;
+                await loadSavedUrls(currentWebsiteId);
+            } catch (error) {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.innerHTML = '<strong>❌ Error:</strong> ' + error.message;
+                resultsContent.innerHTML = '';
+            } finally {
+                collectBtn.disabled = false;
+                collectBtn.textContent = 'Collect Keywords';
+                submitBtn.disabled = false;
             }
         });
 

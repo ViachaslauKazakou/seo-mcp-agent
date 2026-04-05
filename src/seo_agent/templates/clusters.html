@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}SEO Agent - Clusters{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container-card {
+        max-width: 1080px;
+    }
+
+    .cluster-card {
+        border: 1px solid rgba(102, 126, 234, 0.16);
+        border-radius: 14px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .cluster-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .cluster-top-keywords {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .cluster-domain-row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: end;
+        margin-bottom: 1rem;
+    }
+
+    .cluster-domain-row > :first-child {
+        flex: 1 1 auto;
+    }
+
+    .modal-keywords-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .modal-keyword-item {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: #fafbff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="mb-0">🗂️ Cluster Browser</h1>
+        <div class="d-flex gap-2">
+            <a href="/keywords" class="btn btn-outline-secondary btn-sm">Keyword Workspace</a>
+            <a href="/" class="btn btn-outline-secondary btn-sm">Back To Analyze</a>
+        </div>
+    </div>
+    <p class="subtitle">View saved clusters by domain and inspect keywords inside each cluster.</p>
+
+    <div class="cluster-domain-row">
+        <div>
+            <label for="domain-select" class="form-label">Domain</label>
+            <select id="domain-select" class="form-select">
+                <option value="">Select domain from DB...</option>
+            </select>
+        </div>
+        <a id="open-keywords-link" href="/keywords" class="btn btn-outline-secondary">Open Keyword Workspace</a>
+        <button id="export-all-clusters-btn" type="button" class="btn btn-outline-success">Export all clusters</button>
+    </div>
+
+    <div id="clusters-status" class="alert alert-info">Select a domain to load saved clusters.</div>
+
+    <div id="clusters-grid" class="row g-3">
+        <div class="col-12">
+            <div class="list-group-item text-muted rounded">No clusters loaded</div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="clusterKeywordsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="clusterKeywordsTitle">Cluster Keywords</h5>
+                        <div class="small text-muted" id="clusterKeywordsSubtitle"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cluster-keywords-modal-body" class="modal-keywords-grid"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function setCookie(name, value, days = 365) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = `expires=${date.toUTCString()}`;
+            document.cookie = `${name}=${encodeURIComponent(value)};${expires};path=/`;
+        }
+
+        function getCookie(name) {
+            const prefix = `${name}=`;
+            const cookies = document.cookie.split(';');
+            for (let index = 0; index < cookies.length; index += 1) {
+                const cookie = cookies[index].trim();
+                if (cookie.startsWith(prefix)) {
+                    return decodeURIComponent(cookie.substring(prefix.length));
+                }
+            }
+            return null;
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            const domainSelect = document.getElementById('domain-select');
+            const statusBox = document.getElementById('clusters-status');
+            const clustersGrid = document.getElementById('clusters-grid');
+            const openKeywordsLink = document.getElementById('open-keywords-link');
+            const exportAllClustersBtn = document.getElementById('export-all-clusters-btn');
+            const modalElement = document.getElementById('clusterKeywordsModal');
+            const modalTitle = document.getElementById('clusterKeywordsTitle');
+            const modalSubtitle = document.getElementById('clusterKeywordsSubtitle');
+            const modalBody = document.getElementById('cluster-keywords-modal-body');
+            const params = new URLSearchParams(window.location.search);
+            const presetWebsiteId = params.get('website_id');
+            const presetDomain = params.get('domain');
+            const clusterModal = new bootstrap.Modal(modalElement);
+            let currentClusters = [];
+
+            function setStatus(type, text) {
+                statusBox.className = `alert alert-${type}`;
+                statusBox.textContent = text;
+            }
+
+            function getSelectedWebsiteId() {
+                const selected = domainSelect.options[domainSelect.selectedIndex];
+                return selected?.dataset?.websiteId || null;
+            }
+
+            function updateLinks(websiteId) {
+                openKeywordsLink.href = websiteId ? `/keywords?website_id=${websiteId}` : '/keywords';
+            }
+
+            function getSelectedDomainName() {
+                const selectedOption = domainSelect.options[domainSelect.selectedIndex];
+                if (!selectedOption || !selectedOption.value) {
+                    return null;
+                }
+
+                try {
+                    return new URL(selectedOption.value).hostname;
+                } catch (error) {
+                    return selectedOption.value;
+                }
+            }
+
+            function toDomainName(value) {
+                if (!value) return null;
+                try {
+                    return new URL(value).hostname.toLowerCase();
+                } catch (error) {
+                    return String(value).toLowerCase();
+                }
+            }
+
+            function downloadClusterJson(cluster, mode) {
+                const domain = getSelectedDomainName();
+                const basePayload = {
+                    domain,
+                    intent_type: cluster.primary_intent || 'informational',
+                    cluster_name: cluster.cluster_name || `Cluster ${cluster.cluster_label + 1}`,
+                };
+
+                const payload = mode === 'sort'
+                    ? {
+                        ...basePayload,
+                        keys: (cluster.keywords || [])
+                            .slice()
+                            .sort((left, right) => Number(right.tf_idf_score || 0) - Number(left.tf_idf_score || 0))
+                            .map(item => item.keyword),
+                    }
+                    : {
+                        ...basePayload,
+                        keys: (cluster.keywords || []).map(item => ({
+                            keyword: item.keyword,
+                            intent: item.intent,
+                            tf_idf_score: item.tf_idf_score,
+                            frequency: item.frequency,
+                        })),
+                    };
+
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const link = document.createElement('a');
+                const safeDomain = (domain || 'domain').replace(/[^a-zA-Z0-9.-]/g, '_');
+                const safeCluster = (cluster.cluster_name || `cluster_${cluster.cluster_label + 1}`)
+                    .replace(/[^a-zA-Z0-9_-]/g, '_');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${safeDomain}_${safeCluster}_${mode}.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(link.href);
+            }
+
+            function downloadAllClustersJson() {
+                const domain = getSelectedDomainName();
+                if (!domain) {
+                    setStatus('warning', 'Select a domain first.');
+                    return;
+                }
+
+                if (!currentClusters.length) {
+                    setStatus('warning', 'No clusters to export for this domain.');
+                    return;
+                }
+
+                const payload = {
+                    domain,
+                    exported_at: new Date().toISOString(),
+                    clusters: currentClusters.map(cluster => ({
+                        cluster_name: cluster.cluster_name || `Cluster ${cluster.cluster_label + 1}`,
+                        intent_type: cluster.primary_intent || 'informational',
+                        keys: (cluster.keywords || []).map(item => ({
+                            keyword: item.keyword,
+                            intent: item.intent,
+                            tf_idf_score: item.tf_idf_score,
+                            frequency: item.frequency,
+                        })),
+                    })),
+                };
+
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+                const link = document.createElement('a');
+                const safeDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${safeDomain}_all_clusters.json`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(link.href);
+            }
+
+            async function loadDomains(selectedWebsiteId = null, selectedDomain = null) {
+                try {
+                    const response = await fetch('/api/urls');
+                    if (!response.ok) {
+                        setStatus('danger', `Failed to load domains: HTTP ${response.status}`);
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const items = Array.isArray(data.items) ? data.items : [];
+
+                    if (!domainSelect) {
+                        setStatus('danger', 'Domain select element not found in DOM');
+                        return;
+                    }
+
+                    domainSelect.innerHTML = '<option value="">Select domain from DB...</option>';
+                    items.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.url;
+                        option.dataset.websiteId = String(item.website_id);
+                        option.textContent = `${item.domain} (id: ${item.website_id})`;
+                        domainSelect.appendChild(option);
+                    });
+
+                    if (items.length > 0 && selectedWebsiteId) {
+                        const option = Array.from(domainSelect.options).find(
+                            item => item.dataset.websiteId === String(selectedWebsiteId)
+                        );
+                        if (option) {
+                            option.selected = true;
+                        }
+                    }
+
+                    if (!getSelectedWebsiteId() && selectedDomain) {
+                        const domainNorm = String(selectedDomain).toLowerCase();
+                        const option = Array.from(domainSelect.options).find(item => {
+                            const fromUrl = toDomainName(item.value);
+                            const fromText = String(item.textContent || '').toLowerCase();
+                            return fromUrl === domainNorm || fromText.includes(domainNorm);
+                        });
+                        if (option) {
+                            option.selected = true;
+                        }
+                    }
+                    updateLinks(getSelectedWebsiteId());
+                } catch (error) {
+                    console.error('loadDomains error:', error);
+                    setStatus('danger', `Error loading domains: ${error.message}`);
+                }
+            }
+
+            function renderClusters(items) {
+                currentClusters = Array.isArray(items) ? items : [];
+                if (currentClusters.length === 0) {
+                    clustersGrid.innerHTML = `
+                        <div class="col-12">
+                            <div class="list-group-item text-muted rounded">No saved clusters for this domain</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                clustersGrid.innerHTML = currentClusters.map((cluster, index) => `
+                    <div class="col-12 col-lg-6">
+                        <div class="cluster-card p-3 h-100 bg-white">
+                            <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+                                <div>
+                                    <h5 class="mb-1">Cluster ${cluster.cluster_label + 1}</h5>
+                                    <div class="text-muted small">${cluster.cluster_name || 'Untitled cluster'}</div>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-primary mb-2 ms-2">${cluster.size} keywords</span><br>
+                                    <span class="badge bg-info">${cluster.primary_intent || 'informational'}</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-3 small text-muted mb-3">
+                                <div>Avg TF-IDF: <strong>${Number(cluster.avg_tfidf_score || 0).toFixed(3)}</strong></div>
+                                <div>Top: <strong>${(cluster.top_keywords || []).length}</strong></div>
+                            </div>
+                            <div class="cluster-top-keywords mb-3">
+                                ${(cluster.top_keywords || []).slice(0, 8).map(keyword => `<span class="badge badge-custom">${keyword}</span>`).join('') || '<span class="text-muted small">No top keywords</span>'}
+                            </div>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <button class="btn btn-outline-primary btn-sm" type="button" data-cluster-index="${index}">
+                                    Show Keywords
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" type="button" data-export-full-index="${index}">
+                                    Import full
+                                </button>
+                                <button class="btn btn-outline-success btn-sm" type="button" data-export-sort-index="${index}">
+                                    Import sort
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+                clustersGrid.querySelectorAll('[data-cluster-index]').forEach(button => {
+                    button.addEventListener('click', event => {
+                        const clusterIndex = Number(event.currentTarget.dataset.clusterIndex);
+                        openClusterModal(clusterIndex);
+                    });
+                });
+
+                clustersGrid.querySelectorAll('[data-export-full-index]').forEach(button => {
+                    button.addEventListener('click', event => {
+                        const clusterIndex = Number(event.currentTarget.dataset.exportFullIndex);
+                        const cluster = currentClusters[clusterIndex];
+                        if (cluster) {
+                            downloadClusterJson(cluster, 'full');
+                        }
+                    });
+                });
+
+                clustersGrid.querySelectorAll('[data-export-sort-index]').forEach(button => {
+                    button.addEventListener('click', event => {
+                        const clusterIndex = Number(event.currentTarget.dataset.exportSortIndex);
+                        const cluster = currentClusters[clusterIndex];
+                        if (cluster) {
+                            downloadClusterJson(cluster, 'sort');
+                        }
+                    });
+                });
+            }
+
+            function openClusterModal(clusterIndex) {
+                const cluster = currentClusters[clusterIndex];
+                if (!cluster) {
+                    return;
+                }
+
+                modalTitle.textContent = `Cluster ${cluster.cluster_label + 1}: ${cluster.cluster_name || 'Untitled cluster'}`;
+                modalSubtitle.innerHTML = `${cluster.size} keywords • <span class="badge bg-info">${cluster.primary_intent || 'informational'}</span>`;
+                modalBody.innerHTML = (cluster.keywords || []).map(keyword => `
+                    <div class="modal-keyword-item">
+                        <div class="fw-semibold">${keyword.keyword}</div>
+                        <div class="small text-muted">TF-IDF: ${Number(keyword.tf_idf_score || 0).toFixed(3)} | Freq: ${keyword.frequency || 0}</div>
+                    </div>
+                `).join('') || '<div class="text-muted">No keywords in this cluster</div>';
+                clusterModal.show();
+            }
+
+            async function loadClusters() {
+                const websiteId = getSelectedWebsiteId();
+                updateLinks(websiteId);
+
+                if (!websiteId) {
+                    renderClusters([]);
+                    setStatus('info', 'Select a domain to load saved clusters.');
+                    return;
+                }
+
+                setStatus('info', 'Loading clusters...');
+                const response = await fetch(`/api/websites/${websiteId}/clusters`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderClusters(data.items || []);
+                setStatus('success', `Loaded clusters for website #${websiteId}`);
+            }
+
+            domainSelect.addEventListener('change', () => {
+                const selectedWebsiteId = getSelectedWebsiteId();
+                if (selectedWebsiteId) {
+                    setCookie('selected_website_id', selectedWebsiteId);
+                }
+
+                const selectedDomain = toDomainName(domainSelect.value);
+                if (selectedDomain) {
+                    setCookie('selected_domain', selectedDomain);
+                }
+                loadClusters().catch(error => setStatus('danger', error.message));
+            });
+
+            exportAllClustersBtn.addEventListener('click', () => {
+                downloadAllClustersJson();
+            });
+
+            try {
+                const cookieWebsiteId = getCookie('selected_website_id');
+                const cookieDomain = getCookie('selected_domain');
+                const initialWebsiteId = presetWebsiteId || cookieWebsiteId;
+                const initialDomain = presetDomain || cookieDomain;
+
+                await loadDomains(initialWebsiteId, initialDomain);
+                if (getSelectedWebsiteId()) {
+                    await loadClusters();
+                } else {
+                    setStatus('info', 'Select a domain to load saved clusters.');
+                }
+            } catch (error) {
+                setStatus('danger', error.message);
+            }
+        });
+    </script>
+{% endblock %}

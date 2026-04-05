@@ -2,6 +2,8 @@
 
 import asyncio
 import httpx
+import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -27,6 +29,15 @@ ANTI_BOT_HEADERS = {
     "Referer": "https://www.google.com/",
 }
 
+logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 
 class PlayWrightFetcher:
     """Parse URL with Playwright for JavaScript-heavy sites with anti-bot bypass."""
@@ -34,18 +45,21 @@ class PlayWrightFetcher:
     def __init__(
         self, 
         timeout: int = 60000, 
-        headless: bool = False,
+        headless: Optional[bool] = None,
         stealth_mode: bool = True
     ):
         """Initialize Playwright fetcher.
         
         Args:
             timeout: Request timeout in milliseconds (default: 60000ms = 60s)
-            headless: Run browser in headless mode (default: False for better detection bypass)
+            headless: Run browser in headless mode. If None, auto-detect from env.
             stealth_mode: Enable stealth mode to hide automation (default: True)
         """
         self.timeout = timeout
-        self.headless = headless
+        # In Docker/server environments there is usually no X server,
+        # so headless must be enabled unless explicitly overridden.
+        default_headless = os.getenv("DISPLAY") is None
+        self.headless = _env_bool("PLAYWRIGHT_HEADLESS", default_headless) if headless is None else headless
         self.stealth_mode = stealth_mode
         self._browser = None
     
@@ -66,6 +80,13 @@ class PlayWrightFetcher:
         
         try:
             async with async_playwright() as p:
+                logger.info(
+                    "Playwright fetch start: url=%s, headless=%s, stealth_mode=%s, timeout_ms=%s",
+                    url,
+                    self.headless,
+                    self.stealth_mode,
+                    self.timeout,
+                )
                 # Launch browser with enhanced stealth args
                 browser = await p.chromium.launch(
                     headless=self.headless,
@@ -128,6 +149,13 @@ class PlayWrightFetcher:
                     
                     # Get page content (after JavaScript execution)
                     content = await page.content()
+
+                    logger.info(
+                        "Playwright fetch success: url=%s, status=%s, content_len=%s",
+                        str(response.url),
+                        status_code,
+                        len(content),
+                    )
                     
                     # Extract response headers
                     headers = dict(response.headers)
@@ -144,6 +172,7 @@ class PlayWrightFetcher:
                     await browser.close()
                     
         except Exception as e:
+            logger.error("Playwright fetch failed for %s: %s", url, str(e), exc_info=True)
             return FetchResult(
                 url=url,
                 status_code=0,

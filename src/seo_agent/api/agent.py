@@ -51,16 +51,19 @@ class SeoAgent:
             try:
                 fetch_result = await fetcher.fetch(str(url))
                 if fetch_result.error:
+                    logger.error("Fetch failed for %s: %s", url, fetch_result.error)
                     errors.append(f"Fetch error for {url}: {fetch_result.error}")
                     continue
                 
                 parsed = self.parser.parse(fetch_result)
                 if parsed.error:
+                    logger.error("Parse failed for %s: %s", url, parsed.error)
                     errors.append(f"Parse error for {url}: {parsed.error}")
                     continue
                 
                 documents.append(parsed)
             except Exception as e:
+                logger.error("Unhandled processing error for %s: %s", url, str(e), exc_info=True)
                 errors.append(f"Error processing {url}: {str(e)}")
         
         documents_parsed = len(documents)
@@ -164,6 +167,50 @@ class SeoAgent:
         logger.info(f"Report created with run_id: {report.run_id}")
         return report
     
+    async def collect(self, input_spec: InputSpec) -> dict:
+        """Fetch URL and extract keywords only (no clustering or recommendations)."""
+        logger.info(f"Starting keyword collection for URLs: {input_spec.urls}")
+
+        errors = []
+        documents = []
+
+        if input_spec.fetcher_type == "playwright":
+            fetcher = self.playwright_fetcher
+        else:
+            fetcher = Fetcher()
+
+        for url in input_spec.urls[:input_spec.max_pages]:
+            try:
+                fetch_result = await fetcher.fetch(str(url))
+                if fetch_result.error:
+                    logger.error("Fetch failed for %s: %s", url, fetch_result.error)
+                    errors.append(f"Fetch error for {url}: {fetch_result.error}")
+                    continue
+                parsed = self.parser.parse(fetch_result)
+                if parsed.error:
+                    logger.error("Parse failed for %s: %s", url, parsed.error)
+                    errors.append(f"Parse error for {url}: {parsed.error}")
+                    continue
+                documents.append(parsed)
+            except Exception as e:
+                logger.error("Collection error for %s: %s", url, str(e), exc_info=True)
+                errors.append(f"Error processing {url}: {str(e)}")
+
+        keywords: List[KeywordCandidate] = []
+        if documents:
+            try:
+                keywords = self.keyword_extractor.extract(documents)
+                logger.info(f"Collected {len(keywords)} keywords")
+            except Exception as e:
+                logger.error("Keyword extraction error: %s", str(e), exc_info=True)
+                errors.append(f"Keyword extraction error: {str(e)}")
+
+        return {
+            "documents_parsed": len(documents),
+            "keywords": keywords,
+            "errors": errors,
+        }
+
     async def _generate_recommendations(
         self,
         documents: List[ParsedDocument],

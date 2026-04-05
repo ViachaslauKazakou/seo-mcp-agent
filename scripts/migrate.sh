@@ -5,6 +5,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+COMPOSE_FILE="${COMPOSE_FILE:-containers/docker-compose.dev.yml}"
+DOCKER_COMPOSE=(docker-compose -f "$COMPOSE_FILE")
 
 echo "🔄 Running database migrations..."
 
@@ -19,25 +21,22 @@ cd "$PROJECT_ROOT"
 
 # Check if database is accessible
 echo "📡 Checking database connection..."
-if ! docker-compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
+if ! "${DOCKER_COMPOSE[@]}" exec -T postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" > /dev/null 2>&1; then
     echo "❌ Database is not accessible. Please run ./scripts/start-db.sh first."
     exit 1
 fi
 
 echo "✅ Database connection OK"
 
-# Run migrations
-cd "$PROJECT_ROOT/src/db"
-
 echo "📋 Current migration status:"
-poetry run alembic -c alembic.ini current
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini current"
 
 echo ""
 echo "⬆️  Applying migrations to head..."
-poetry run alembic -c alembic.ini upgrade head
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini upgrade head"
 
 echo ""
 echo "✅ Migrations completed!"
 echo ""
 echo "📊 Current schema version:"
-poetry run alembic -c alembic.ini current
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini current"

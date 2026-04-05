@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+
+{% block title %}SEO Agent - Intent Phrases{% endblock %}
+
+{% block extra_css %}
+<style>
+    .container-card {
+        max-width: 900px;
+    }
+
+    .intent-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .intent-section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .phrase-row {
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 0.4rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: #fafbff;
+        transition: background 0.15s;
+    }
+
+    .phrase-row:hover {
+        background: #f0f3ff;
+    }
+
+    .phrase-row.inactive {
+        opacity: 0.5;
+    }
+
+    .phrase-text {
+        flex: 1 1 auto;
+        font-size: 0.95rem;
+    }
+
+    .edit-input {
+        flex: 1 1 auto;
+        max-width: 340px;
+    }
+
+    .scope-note {
+        font-size: 0.82rem;
+        color: #888;
+        margin-bottom: 1.2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="mb-0">🎯 Intent Phrases</h1>
+        <div class="d-flex gap-2">
+            <a href="/keywords" class="btn btn-outline-secondary btn-sm">Keywords</a>
+            <a href="/" class="btn btn-outline-secondary btn-sm">Back To Analyze</a>
+        </div>
+    </div>
+
+    <p class="subtitle">Custom phrases supplement built-in defaults for keyword intent detection.
+        <strong>Global</strong> phrases apply to all domains; domain phrases apply only to the selected domain.</p>
+
+    <!-- Scope selector -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <label for="scope-select" class="form-label">Scope</label>
+            <select id="scope-select" class="form-select">
+                <option value="global">🌐 Global (all domains)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Add form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="card-title mb-3">Add new phrase</h6>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Intent</label>
+                    <select id="new-intent" class="form-select form-select-sm">
+                        <option value="transactional">Transactional</option>
+                        <option value="commercial">Commercial</option>
+                        <option value="navigational">Navigational</option>
+                        <option value="informational" selected>Informational</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Phrase</label>
+                    <input id="new-phrase" type="text" class="form-control form-control-sm"
+                           placeholder="e.g. рассчитать стоимость"/>
+                </div>
+                <div class="col-md-2">
+                    <button id="add-btn" class="btn btn-primary btn-sm w-100">Add</button>
+                </div>
+            </div>
+            <div id="add-status" class="d-none mt-2 small"></div>
+        </div>
+    </div>
+
+    <div id="phrases-status" class="alert alert-info">Select a scope above.</div>
+    <div id="phrases-container"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ── Cookie helpers ───────────────────────────────────────────────────────
+    function getCookie(name) {
+        const prefix = name + '=';
+        for (let c of document.cookie.split(';')) {
+            c = c.trim();
+            if (c.startsWith(prefix)) return decodeURIComponent(c.substring(prefix.length));
+        }
+        return null;
+    }
+
+    function setCookie(name, value, days = 365) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires};path=/`;
+    }
+
+    // ── Constants ────────────────────────────────────────────────────────────
+    const INTENT_COLORS = {
+        transactional: 'danger',
+        commercial: 'warning',
+        navigational: 'info',
+        informational: 'primary',
+    };
+    const INTENT_LABELS = {
+        transactional: 'Transactional',
+        commercial: 'Commercial',
+        navigational: 'Navigational',
+        informational: 'Informational',
+    };
+    const INTENT_ORDER = ['transactional', 'commercial', 'navigational', 'informational'];
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let currentPhrases = [];
+    let editingId = null;
+
+    // ── DOM ──────────────────────────────────────────────────────────────────
+    const scopeSelect = document.getElementById('scope-select');
+    const phrasesStatus = document.getElementById('phrases-status');
+    const phrasesContainer = document.getElementById('phrases-container');
+    const addBtn = document.getElementById('add-btn');
+    const addStatus = document.getElementById('add-status');
+    const newIntentSel = document.getElementById('new-intent');
+    const newPhraseInput = document.getElementById('new-phrase');
+
+    // ── Load domains into scope select ───────────────────────────────────────
+    async function loadScopes() {
+        const params = new URLSearchParams(window.location.search);
+        const presetWebsiteId = params.get('website_id');
+        const presetDomain = params.get('domain');
+        const cookieId = getCookie('selected_website_id');
+        const cookieDomain = getCookie('selected_domain');
+
+        try {
+            const r = await fetch('/api/urls');
+            const data = await r.json();
+            const items = data.items || [];
+            for (const item of items) {
+                const opt = document.createElement('option');
+                opt.value = item.website_id;
+                opt.dataset.domain = item.domain;
+                opt.textContent = `🌐 ${item.domain}`;
+                scopeSelect.appendChild(opt);
+            }
+
+            // 1st priority: website_id from URL query or cookie
+            const targetId = presetWebsiteId || cookieId;
+            if (targetId) {
+                for (const opt of scopeSelect.options) {
+                    if (opt.value === String(targetId)) {
+                        scopeSelect.value = opt.value;
+                        return;
+                    }
+                }
+            }
+
+            // 2nd priority: domain from URL query or cookie
+            const targetDomain = (presetDomain || cookieDomain || '').toLowerCase();
+            if (targetDomain) {
+                for (const opt of scopeSelect.options) {
+                    const optDomain = (opt.dataset.domain || '').toLowerCase();
+                    if (optDomain === targetDomain || optDomain.includes(targetDomain) || targetDomain.includes(optDomain)) {
+                        scopeSelect.value = opt.value;
+                        return;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load scopes', e);
+        }
+    }
+
+    function getSelectedWebsiteId() {
+        const v = scopeSelect.value;
+        return v === 'global' ? null : parseInt(v, 10);
+    }
+
+    // ── Load phrases ─────────────────────────────────────────────────────────
+    async function loadPhrases() {
+        const websiteId = getSelectedWebsiteId();
+        const url = websiteId !== null ? `/api/intent-phrases?website_id=${websiteId}` : '/api/intent-phrases';
+        try {
+            phrasesStatus.className = 'alert alert-info';
+            phrasesStatus.textContent = 'Loading...';
+            phrasesContainer.innerHTML = '';
+            const r = await fetch(url);
+            const data = await r.json();
+            currentPhrases = data.items || [];
+            renderPhrases();
+        } catch (e) {
+            phrasesStatus.className = 'alert alert-danger';
+            phrasesStatus.textContent = 'Failed to load phrases: ' + e.message;
+        }
+    }
+
+    // ── Render ───────────────────────────────────────────────────────────────
+    function renderPhrases() {
+        phrasesContainer.innerHTML = '';
+
+        if (currentPhrases.length === 0) {
+            phrasesStatus.className = 'alert alert-secondary';
+            phrasesStatus.textContent = 'No custom phrases for this scope yet. Add some above.';
+            return;
+        }
+
+        phrasesStatus.className = 'd-none';
+
+        // Group by intent
+        const groups = {};
+        for (const p of currentPhrases) {
+            groups[p.intent] = groups[p.intent] || [];
+            groups[p.intent].push(p);
+        }
+
+        const orderedIntents = [
+            ...INTENT_ORDER.filter(i => groups[i]),
+            ...Object.keys(groups).filter(i => !INTENT_ORDER.includes(i)),
+        ];
+
+        for (const intent of orderedIntents) {
+            const phrases = groups[intent];
+            const color = INTENT_COLORS[intent] || 'secondary';
+            const label = INTENT_LABELS[intent] || intent;
+
+            const section = document.createElement('div');
+            section.className = 'intent-section';
+            section.innerHTML = `
+                <div class="intent-section-header">
+                    <span class="badge bg-${color}">${label}</span>
+                    <span class="text-muted small">${phrases.length} phrase${phrases.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="phrases-list" id="list-${intent}"></div>
+            `;
+            phrasesContainer.appendChild(section);
+
+            const list = document.getElementById(`list-${intent}`);
+            for (const p of phrases) {
+                list.appendChild(buildPhraseRow(p, color));
+            }
+        }
+    }
+
+    function buildPhraseRow(p, color) {
+        const row = document.createElement('div');
+        row.className = `phrase-row${p.is_active ? '' : ' inactive'}`;
+        row.dataset.phraseId = p.id;
+
+        if (editingId === p.id) {
+            row.innerHTML = `
+                <input type="text" class="form-control form-control-sm edit-input"
+                       value="${escHtml(p.phrase)}"/>
+                <button class="btn btn-success btn-sm save-edit-btn">Save</button>
+                <button class="btn btn-outline-secondary btn-sm cancel-edit-btn">Cancel</button>
+            `;
+            row.querySelector('.save-edit-btn').addEventListener('click', () => {
+                const val = row.querySelector('.edit-input').value.trim();
+                saveEdit(p.id, val);
+            });
+            row.querySelector('.cancel-edit-btn').addEventListener('click', cancelEdit);
+            setTimeout(() => row.querySelector('.edit-input')?.focus(), 50);
+        } else {
+            row.innerHTML = `
+                <span class="phrase-text">${escHtml(p.phrase)}</span>
+                <span class="badge bg-${p.is_active ? 'success' : 'secondary'} ms-auto">
+                    ${p.is_active ? 'active' : 'disabled'}
+                </span>
+                <button class="btn btn-outline-${color} btn-sm toggle-btn" title="${p.is_active ? 'Disable' : 'Enable'}">
+                    ${p.is_active ? '⏸' : '▶'}
+                </button>
+                <button class="btn btn-outline-primary btn-sm edit-btn" title="Edit">✏️</button>
+                <button class="btn btn-outline-danger btn-sm delete-btn" title="Delete">🗑️</button>
+            `;
+            row.querySelector('.edit-btn').addEventListener('click', () => startEdit(p.id));
+            row.querySelector('.delete-btn').addEventListener('click', () => deletePhrase(p.id));
+            row.querySelector('.toggle-btn').addEventListener('click', () => togglePhrase(p.id, !p.is_active));
+        }
+        return row;
+    }
+
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // ── Edit ─────────────────────────────────────────────────────────────────
+    function startEdit(id) {
+        editingId = id;
+        renderPhrases();
+    }
+
+    function cancelEdit() {
+        editingId = null;
+        renderPhrases();
+    }
+
+    async function saveEdit(id, newText) {
+        if (!newText) { alert('Phrase cannot be empty.'); return; }
+        try {
+            const r = await fetch(`/api/intent-phrases/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phrase: newText }),
+            });
+            if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+            editingId = null;
+            await loadPhrases();
+        } catch (e) {
+            alert('Save failed: ' + e.message);
+        }
+    }
+
+    async function togglePhrase(id, isActive) {
+        try {
+            const r = await fetch(`/api/intent-phrases/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: isActive }),
+            });
+            if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+            await loadPhrases();
+        } catch (e) {
+            alert('Toggle failed: ' + e.message);
+        }
+    }
+
+    async function deletePhrase(id) {
+        if (!confirm('Delete this phrase?')) return;
+        try {
+            const r = await fetch(`/api/intent-phrases/${id}`, { method: 'DELETE' });
+            if (!r.ok && r.status !== 204) throw new Error((await r.json()).detail || r.statusText);
+            await loadPhrases();
+        } catch (e) {
+            alert('Delete failed: ' + e.message);
+        }
+    }
+
+    // ── Add ──────────────────────────────────────────────────────────────────
+    addBtn.addEventListener('click', async () => {
+        const phrase = newPhraseInput.value.trim();
+        if (!phrase) { showAddStatus('danger', 'Please enter a phrase.'); return; }
+
+        const websiteId = getSelectedWebsiteId();
+        const payload = { intent: newIntentSel.value, phrase, website_id: websiteId };
+
+        try {
+            addBtn.disabled = true;
+            const r = await fetch('/api/intent-phrases', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await r.json();
+            if (!r.ok) { showAddStatus('danger', data.detail || r.statusText); return; }
+            newPhraseInput.value = '';
+            showAddStatus('success', 'Phrase added.');
+            await loadPhrases();
+        } catch (e) {
+            showAddStatus('danger', 'Error: ' + e.message);
+        } finally {
+            addBtn.disabled = false;
+        }
+    });
+
+    newPhraseInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addBtn.click();
+    });
+
+    function showAddStatus(type, msg) {
+        addStatus.className = `small alert alert-${type} mt-2`;
+        addStatus.textContent = msg;
+        if (type === 'success') {
+            setTimeout(() => { addStatus.className = 'd-none'; }, 2000);
+        }
+    }
+
+    // ── Scope change ─────────────────────────────────────────────────────────
+    scopeSelect.addEventListener('change', () => {
+        const v = scopeSelect.value;
+        if (v !== 'global') {
+            setCookie('selected_website_id', v);
+            const selectedOpt = scopeSelect.options[scopeSelect.selectedIndex];
+            const domain = selectedOpt?.dataset?.domain || '';
+            if (domain) setCookie('selected_domain', domain);
+        }
+        loadPhrases();
+    });
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        loadScopes().then(() => loadPhrases());
+    });
+</script>
+{% endblock %}

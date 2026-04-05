@@ -1,0 +1,35 @@
+FROM python:3.12-bookworm
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    libpq-dev \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV POETRY_VERSION=2.3.2 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_CACHE_DIR=/tmp/poetry_cache \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app/src:/app
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir "poetry==${POETRY_VERSION}"
+
+WORKDIR /app
+
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --extras dev --no-root && rm -rf "$POETRY_CACHE_DIR"
+
+# Install Playwright browser binaries and required system dependencies.
+RUN playwright install --with-deps chromium
+
+# debugpy is required for VS Code attach debug in container.
+RUN pip install --no-cache-dir debugpy
+
+COPY . .
+
+EXPOSE 8030 5678
+
+CMD ["python", "-Xfrozen_modules=off", "-m", "debugpy", "--listen", "0.0.0.0:5678", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8030", "--reload"]

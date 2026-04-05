@@ -17,6 +17,8 @@ TRANSACTIONAL_PHRASES = [
     "book",
     "appoint",
     "price",
+        "delivery",
+        "shipping",
     "pricing",
     "cost",
     "sale",
@@ -28,6 +30,8 @@ TRANSACTIONAL_PHRASES = [
     "заказать",
     "оформить",
     "скачать",
+        "доставка",
+        "доставки",
     "подписаться",
     "регистрация",
     "цена",
@@ -35,6 +39,10 @@ TRANSACTIONAL_PHRASES = [
     "скидка",
     "акция",
     "дешево",
+    "delivery",
+    "доставка",
+    "cargo",
+    "груз"
 ]
 
 # Commercial investigation intent: compare and evaluate

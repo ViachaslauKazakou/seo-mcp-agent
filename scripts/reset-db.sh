@@ -5,6 +5,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+COMPOSE_FILE="${COMPOSE_FILE:-containers/docker-compose.dev.yml}"
+DOCKER_COMPOSE=(docker-compose -f "$COMPOSE_FILE")
 
 echo "⚠️  WARNING: This will DELETE ALL DATA in the database!"
 read -p "Are you sure? (yes/no): " -r
@@ -25,12 +27,11 @@ export POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-seo_password}
 cd "$PROJECT_ROOT"
 
 echo "🗑️  Dropping all tables..."
-cd "$PROJECT_ROOT/src/db"
-poetry run alembic -c alembic.ini downgrade base
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini downgrade base"
 
 echo ""
 echo "⬆️  Applying all migrations..."
-poetry run alembic -c alembic.ini upgrade head
+"${DOCKER_COMPOSE[@]}" run --rm app sh -lc "cd /app/src/db && alembic -c alembic.ini upgrade head"
 
 echo ""
 echo "✅ Database reset complete!"

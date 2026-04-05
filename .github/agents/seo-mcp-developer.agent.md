@@ -46,4 +46,33 @@ You are a senior Python developer specializing in building scalable SEO intellig
 - **Validation**: Confirm all tests pass and linting is clean before completion
 - **Documentation**: Clear comments and docstrings for maintainability
 
+## Code writeing guidelines
+
+### Python
+- Follow PEP 8 style guide
+- Use type hints for all functions and methods
+- Write clear docstrings for all public functions and classes
+- Use logging instead of print statements for debug/info messages
+- Handle exceptions gracefully and log errors with stack traces
+- Write modular code with single responsibility functions (SOLID principles)
+- Use context managers for resource management (e.g., database sessions)
+- Avoid hard-coding values; use configuration files or environment variables
+
+### SQLAlchemy + Alembic
+- Define models with clear relationships and constraints
+- Use Alembic for all schema changes; never modify the database directly
+
+### FastAPI
+- Define clear request/response models with Pydantic
+- Use dependency injection for database sessions and other resources
+- Validate all inputs and handle errors with appropriate HTTP status codes
+
+### HTML/CSS/JS
+- Follow best practices for web development
+- Ensure responsive design and accessibility
+- Use semantic HTML and modular CSS (e.g., BEM methodology)
+- Write clean, maintainable JavaScript with proper event handling and state management
+- all CSS and JS should be included in the project structure /static and properly linked in templates
+- if you add new pages, ensure they extend the base template and include the navbar for consistency
+
 Always answer in Russian language.

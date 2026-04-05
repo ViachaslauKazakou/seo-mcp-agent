@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+
+{% block title %}SEO Agent - Keywords{% endblock %}
+
+{% block content %}
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="mb-0">🧩 Keyword Workspace</h1>
+        <div class="d-flex gap-2">
+            <a href="/clusters" class="btn btn-outline-secondary btn-sm">Clusters</a>
+            <a href="/" class="btn btn-outline-secondary btn-sm">Back To Analyze</a>
+        </div>
+    </div>
+    <p class="subtitle">Manage domain keywords, run clustering, and save clusters to DB</p>
+
+    <div class="mb-3">
+        <label for="domain-select" class="form-label">Domain</label>
+        <select id="domain-select" class="form-select">
+            <option value="">Select domain from DB...</option>
+        </select>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Add Keyword Manually</h5>
+            <div class="row g-2">
+                <div class="col-md-5">
+                    <input id="manual-keyword" type="text" class="form-control" placeholder="keyword phrase">
+                </div>
+                <div class="col-md-3">
+                    <select id="manual-intent" class="form-select">
+                        <option value="informational">informational</option>
+                        <option value="commercial">commercial</option>
+                        <option value="navigational">navigational</option>
+                        <option value="transactional">transactional</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input id="manual-tfidf" type="number" class="form-control" value="1.0" min="0" step="0.1">
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button id="add-keyword-btn" class="btn btn-primary">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Import from File</h5>
+            <p class="text-muted small mb-2">Supported: <strong>xlsx, xls, csv, txt, docx, doc</strong>. For text files the delimiter is detected automatically (comma, semicolon, tab, pipe, or newline).</p>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-8">
+                    <input id="upload-file" type="file" class="form-control"
+                        accept=".xlsx,.xlsm,.xls,.csv,.txt,.text,.md,.docx,.doc">
+                </div>
+                <div class="col-md-4 d-grid">
+                    <button id="upload-btn" class="btn btn-outline-primary">Upload & Import</button>
+                </div>
+            </div>
+            <div id="upload-result" class="mt-2" style="display:none;"></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Run Clustering</h5>
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <input id="cluster-count" type="number" class="form-control" value="5" min="1" max="30">
+                </div>
+                <div class="col-md-5">
+                    <input id="cluster-model" type="text" class="form-control" value="all-MiniLM-L6-v2">
+                </div>
+                <div class="col-md-3 d-grid">
+                    <button id="clusterize-btn" class="btn btn-success">Clusterize & Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="workspace-status" class="alert alert-info">Select a domain to load keywords and clusters.</div>
+
+    <h5 class="mt-3">Keywords</h5>
+    <div id="keywords-list" class="list-group mb-4">
+        <div class="list-group-item text-muted">No data loaded</div>
+    </div>
+
+    <h5>Clusters</h5>
+    <div id="clusters-list" class="mb-2">
+        <div class="list-group-item text-muted">No clusters yet</div>
+    </div>
+
+    <script>
+        function setCookie(name, value, days = 365) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            const expires = `expires=${date.toUTCString()}`;
+            document.cookie = `${name}=${encodeURIComponent(value)};${expires};path=/`;
+        }
+
+        function getCookie(name) {
+            const prefix = `${name}=`;
+            const cookies = document.cookie.split(';');
+            for (let index = 0; index < cookies.length; index += 1) {
+                const cookie = cookies[index].trim();
+                if (cookie.startsWith(prefix)) {
+                    return decodeURIComponent(cookie.substring(prefix.length));
+                }
+            }
+            return null;
+        }
+
+        const domainSelect = document.getElementById('domain-select');
+        const statusBox = document.getElementById('workspace-status');
+        const keywordsList = document.getElementById('keywords-list');
+        const clustersList = document.getElementById('clusters-list');
+
+        const manualKeyword = document.getElementById('manual-keyword');
+        const manualIntent = document.getElementById('manual-intent');
+        const manualTfidf = document.getElementById('manual-tfidf');
+        const addKeywordBtn = document.getElementById('add-keyword-btn');
+
+        const clusterCount = document.getElementById('cluster-count');
+        const clusterModel = document.getElementById('cluster-model');
+        const clusterizeBtn = document.getElementById('clusterize-btn');
+
+        const uploadFile = document.getElementById('upload-file');
+        const uploadBtn = document.getElementById('upload-btn');
+        const uploadResult = document.getElementById('upload-result');
+        const params = new URLSearchParams(window.location.search);
+        const presetWebsiteId = params.get('website_id');
+        const presetDomain = params.get('domain');
+
+        function getSelectedWebsiteId() {
+            const selected = domainSelect.options[domainSelect.selectedIndex];
+            return selected?.dataset?.websiteId || null;
+        }
+
+        function setStatus(type, text) {
+            statusBox.className = `alert alert-${type}`;
+            statusBox.textContent = text;
+        }
+
+        function toDomainName(value) {
+            if (!value) return null;
+            try {
+                return new URL(value).hostname.toLowerCase();
+            } catch (error) {
+                return String(value).toLowerCase();
+            }
+        }
+
+        async function loadDomains(selectedWebsiteId = null, selectedDomain = null) {
+            const response = await fetch('/api/urls');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            const items = Array.isArray(data.items) ? data.items : [];
+
+            domainSelect.innerHTML = '<option value="">Select domain from DB...</option>';
+            items.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.url;
+                option.dataset.websiteId = String(item.website_id);
+                option.textContent = `${item.domain} (id: ${item.website_id})`;
+                domainSelect.appendChild(option);
+            });
+
+            if (selectedWebsiteId) {
+                const option = Array.from(domainSelect.options).find(
+                    item => item.dataset.websiteId === String(selectedWebsiteId)
+                );
+                if (option) {
+                    option.selected = true;
+                    return;
+                }
+            }
+
+            if (selectedDomain) {
+                const domainNorm = String(selectedDomain).toLowerCase();
+                const option = Array.from(domainSelect.options).find(item => {
+                    const fromUrl = toDomainName(item.value);
+                    const fromText = String(item.textContent || '').toLowerCase();
+                    return fromUrl === domainNorm || fromText.includes(domainNorm);
+                });
+                if (option) {
+                    option.selected = true;
+                }
+            }
+        }
+
+        function renderKeywords(items) {
+            if (!items || items.length === 0) {
+                keywordsList.innerHTML = '<div class="list-group-item text-muted">No keywords found</div>';
+                return;
+            }
+            keywordsList.innerHTML = items.map(item => `
+                <div class="list-group-item d-flex justify-content-between align-items-center" id="kw-row-${item.id}">
+                    <div>
+                        <strong>${item.keyword}</strong>
+                        <span class="badge bg-secondary ms-2">${item.intent}</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="small text-end">
+                            <div>tfidf: <strong>${Number(item.tf_idf_score).toFixed(3)}</strong></div>
+                            <div>freq: <strong>${item.frequency}</strong></div>
+                        </div>
+                        <button class="btn btn-outline-danger btn-sm" onclick="deleteKeyword(${item.id})" title="Delete keyword">&times;</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderClusters(items) {
+            if (!items || items.length === 0) {
+                clustersList.innerHTML = '<div class="list-group-item text-muted">No clusters saved</div>';
+                return;
+            }
+            clustersList.innerHTML = items.map(cluster => `
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2">
+                            Cluster ${cluster.cluster_label + 1}: ${cluster.cluster_name || 'Topic'}
+                            <span class="badge bg-primary ms-2">${cluster.size}</span>
+                        </h6>
+                        <div class="small text-muted mb-2">
+                            Avg TF-IDF: ${Number(cluster.avg_tfidf_score || 0).toFixed(3)}
+                        </div>
+                        <div>
+                            ${(cluster.keywords || []).map(k => `<span class="badge badge-custom me-1 mb-1">${k.keyword}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadKeywordsAndClusters() {
+            const websiteId = getSelectedWebsiteId();
+            if (!websiteId) {
+                renderKeywords([]);
+                renderClusters([]);
+                setStatus('info', 'Select a domain to load keywords and clusters.');
+                return;
+            }
+
+            setStatus('info', 'Loading keywords and clusters...');
+            const [kwRes, clRes] = await Promise.all([
+                fetch(`/api/websites/${websiteId}/keywords`),
+                fetch(`/api/websites/${websiteId}/clusters`),
+            ]);
+            if (!kwRes.ok) throw new Error(`Keywords HTTP ${kwRes.status}`);
+            if (!clRes.ok) throw new Error(`Clusters HTTP ${clRes.status}`);
+
+            const kwData = await kwRes.json();
+            const clData = await clRes.json();
+            renderKeywords(kwData.items || []);
+            renderClusters(clData.items || []);
+            if ((kwData.items || []).length === 0) {
+                setStatus('warning', `Loaded domain ${kwData.domain}. No keywords found yet.`);
+                return;
+            }
+
+            setStatus('success', `Loaded domain ${kwData.domain}`);
+        }
+
+        async function deleteKeyword(keywordId) {
+            if (!confirm('Delete this keyword?')) return;
+            try {
+                const response = await fetch(`/api/keywords/${keywordId}`, { method: 'DELETE' });
+                if (response.status === 404) {
+                    setStatus('warning', 'Keyword not found (already deleted?).');
+                    return;
+                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const row = document.getElementById(`kw-row-${keywordId}`);
+                if (row) row.remove();
+                const remaining = keywordsList.querySelectorAll('[id^="kw-row-"]').length;
+                if (remaining === 0) {
+                    keywordsList.innerHTML = '<div class="list-group-item text-muted">No keywords found</div>';
+                }
+                setStatus('success', 'Keyword deleted.');
+            } catch (err) {
+                setStatus('danger', err.message);
+            }
+        }
+
+        async function addManualKeyword() {
+            const websiteId = getSelectedWebsiteId();
+            if (!websiteId) {
+                setStatus('warning', 'Select a domain first.');
+                return;
+            }
+
+            const payload = {
+                keyword: manualKeyword.value.trim(),
+                intent: manualIntent.value,
+                tf_idf_score: Number(manualTfidf.value || 1),
+            };
+            if (!payload.keyword) {
+                setStatus('warning', 'Keyword is required.');
+                return;
+            }
+
+            setStatus('info', 'Saving keyword...');
+            const response = await fetch(`/api/websites/${websiteId}/keywords`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            manualKeyword.value = '';
+            await loadKeywordsAndClusters();
+            setStatus('success', 'Keyword saved.');
+        }
+
+        async function runClusterization() {
+            const websiteId = getSelectedWebsiteId();
+            if (!websiteId) {
+                setStatus('warning', 'Select a domain first.');
+                return;
+            }
+
+            setStatus('info', 'Running clustering...');
+            const response = await fetch(`/api/websites/${websiteId}/clusterize`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    n_clusters: Number(clusterCount.value || 5),
+                    model_name: clusterModel.value.trim() || 'all-MiniLM-L6-v2',
+                }),
+            });
+            if (!response.ok) {
+                const errorPayload = await response.json().catch(() => null);
+                const errorText = errorPayload?.detail || response.statusText;
+                throw new Error(`Clusterize failed: ${errorText}`);
+            }
+
+            const data = await response.json();
+            renderClusters(data.clusters || []);
+            setStatus('success', 'Clusters generated and saved.');
+        }
+
+        domainSelect.addEventListener('change', () => {
+            loadKeywordsAndClusters().catch(err => setStatus('danger', err.message));
+        });
+        addKeywordBtn.addEventListener('click', () => {
+            addManualKeyword().catch(err => setStatus('danger', err.message));
+        });
+        clusterizeBtn.addEventListener('click', () => {
+            runClusterization().catch(err => setStatus('danger', err.message));
+        });
+        uploadBtn.addEventListener('click', () => {
+            uploadKeywordFile().catch(err => {
+                uploadResult.style.display = 'block';
+                uploadResult.innerHTML = `<div class="alert alert-danger mb-0">Error: ${err.message}</div>`;
+            });
+        });
+
+        domainSelect.addEventListener('change', () => {
+            const selectedWebsiteId = getSelectedWebsiteId();
+            if (selectedWebsiteId) {
+                setCookie('selected_website_id', selectedWebsiteId);
+            }
+
+            const selectedUrl = domainSelect.value;
+            const selectedDomain = toDomainName(selectedUrl);
+            if (selectedDomain) {
+                setCookie('selected_domain', selectedDomain);
+            }
+        });
+
+        async function uploadKeywordFile() {
+            const websiteId = getSelectedWebsiteId();
+            if (!websiteId) {
+                setStatus('warning', 'Select a domain first.');
+                return;
+            }
+            if (!uploadFile.files || uploadFile.files.length === 0) {
+                uploadResult.style.display = 'block';
+                uploadResult.innerHTML = '<div class="alert alert-warning mb-0">Please choose a file first.</div>';
+                return;
+            }
+
+            const file = uploadFile.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Uploading...';
+            uploadResult.style.display = 'none';
+
+            const response = await fetch(`/api/websites/${websiteId}/keywords/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload & Import';
+
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({ detail: response.statusText }));
+                uploadResult.style.display = 'block';
+                uploadResult.innerHTML = `<div class="alert alert-danger mb-0">Upload failed: ${err.detail || response.statusText}</div>`;
+                return;
+            }
+
+            const data = await response.json();
+            uploadResult.style.display = 'block';
+            uploadResult.innerHTML = `
+                <div class="alert alert-success mb-0">
+                    ✅ Imported <strong>${data.imported}</strong> keywords
+                    (${data.skipped} duplicates skipped).
+                    Total in DB: <strong>${data.total_keywords}</strong>.
+                </div>
+            `;
+            uploadFile.value = '';
+            await loadKeywordsAndClusters();
+        }
+
+        const cookieWebsiteId = getCookie('selected_website_id');
+        const cookieDomain = getCookie('selected_domain');
+        const initialWebsiteId = presetWebsiteId || cookieWebsiteId;
+        const initialDomain = presetDomain || cookieDomain;
+
+        loadDomains(initialWebsiteId, initialDomain)
+            .then(() => {
+                if (getSelectedWebsiteId()) {
+                    return loadKeywordsAndClusters();
+                }
+
+                setStatus('info', 'Select a domain to load keywords and clusters.');
+                return null;
+            })
+            .catch(err => setStatus('danger', err.message));
+    </script>
+{% endblock %}
